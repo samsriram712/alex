@@ -7,10 +7,14 @@ import json
 import time
 import uuid
 import boto3
+import os
 from decimal import Decimal
+from dotenv import load_dotenv
 
 from src import Database
 
+# Load environment variables
+load_dotenv(override=True)
 
 def test_multiple_accounts():
     """Test analysis for a user with multiple accounts"""
@@ -32,6 +36,21 @@ def test_multiple_accounts():
     )
     print(f'\n✅ Created test user: {test_user_id}')
     
+    # Ensure instruments exist
+    instruments = ["SPY", "BND", "VTI", "VXUS", "QQQ", "IWM", "EFA", "AGG", "VNQ", "GLD"]
+    for i, symbol in enumerate(instruments):
+        existing = db.instruments.find_by_symbol(symbol)
+        if not existing:
+            db.instruments.create({
+                "symbol": symbol,
+                "name": f"Test ETF {symbol}",
+                "instrument_type": "etf",
+                "current_price": 100.0 + i * 50,
+                "allocation_asset_class": {"equity": 100.0} if i % 2 == 0 else {"fixed_income": 100.0},
+                "allocation_regions": {"north_america": 100.0},
+                "allocation_sectors": {"other": 100.0}
+            }, returning='symbol')
+            print(f'✅ Created instrument: {symbol}')
     # Create multiple accounts with different portfolios
     accounts = []
     
@@ -121,8 +140,16 @@ def test_multiple_accounts():
     print(f'\n🚀 Created job: {job_id}')
     
     # Trigger analysis via SQS
-    sqs = boto3.client('sqs', region_name='us-east-1')
-    queue_url = 'https://sqs.us-east-1.amazonaws.com/392340646348/alex-analysis-jobs'
+    """Send a job to SQS"""
+    sqs = boto3.client('sqs', region_name=os.getenv('DEFAULT_AWS_REGION', 'us-east-1'))
+    
+    # Get queue URL
+    queue_name = 'alex-analysis-jobs'
+    response = sqs.get_queue_url(QueueName=queue_name)
+    queue_url = response['QueueUrl']
+
+    # sqs = boto3.client('sqs', region_name='ap-southeast-2')
+    # queue_url = 'https://sqs.ap-southeast-2.amazonaws.com/596644540428/alex-analysis-jobs'
     
     message = sqs.send_message(
         QueueUrl=queue_url,
