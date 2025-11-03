@@ -16,13 +16,13 @@ AWS offers several database options, each with different strengths:
 
 ### Common AWS Database Services
 
-| Service | Type | Best For | Why We Didn't Choose It |
-|---------|------|----------|-------------------------|
-| **DynamoDB** | NoSQL | Simple key-value lookups, high-scale apps | No SQL joins, complex for relational data like portfolios |
-| **RDS (Regular)** | Traditional SQL | Predictable workloads, always-on apps | Requires VPC/networking setup, always running = higher cost |
-| **DocumentDB** | Document NoSQL | MongoDB-compatible apps | Overkill for structured financial data |
-| **Neptune** | Graph | Social networks, recommendation engines | Wrong fit - we don't need graph relationships |
-| **Timestream** | Time-series | IoT, metrics, logs | Too specialized for general portfolio data |
+| Service           | Type            | Best For                                  | Why We Didn't Choose It                                     |
+| ----------------- | --------------- | ----------------------------------------- | ----------------------------------------------------------- |
+| **DynamoDB**      | NoSQL           | Simple key-value lookups, high-scale apps | No SQL joins, complex for relational data like portfolios   |
+| **RDS (Regular)** | Traditional SQL | Predictable workloads, always-on apps     | Requires VPC/networking setup, always running = higher cost |
+| **DocumentDB**    | Document NoSQL  | MongoDB-compatible apps                   | Overkill for structured financial data                      |
+| **Neptune**       | Graph           | Social networks, recommendation engines   | Wrong fit - we don't need graph relationships               |
+| **Timestream**    | Time-series     | IoT, metrics, logs                        | Too specialized for general portfolio data                  |
 
 ### Why Aurora Serverless v2 PostgreSQL?
 
@@ -40,6 +40,7 @@ For students learning AWS, this removes the complexity of VPCs, security groups,
 ## What We're Building
 
 In this guide, you'll deploy:
+
 - Aurora Serverless v2 PostgreSQL cluster with Data API enabled (no VPC needed!)
 - Complete database schema for portfolios, users, and reports
 - Shared database package with Pydantic validation
@@ -53,13 +54,13 @@ graph TB
     User[User] -->|Manage Portfolio| API[API Gateway]
     API -->|CRUD Operations| Lambda[API Lambda]
     Lambda -->|Data API| Aurora[(Aurora Serverless v2<br/>PostgreSQL)]
-    
+
     Planner[Financial Planner<br/>Orchestrator] -->|Read/Write| Aurora
     Tagger[InstrumentTagger] -->|Update Instruments| Aurora
     Reporter[Report Writer] -->|Store Reports| Aurora
     Charter[Chart Maker] -->|Store Charts| Aurora
     Retirement[Retirement Specialist] -->|Store Projections| Aurora
-    
+
     style Aurora fill:#FF9900
     style Planner fill:#FFD700
     style API fill:#90EE90
@@ -68,6 +69,7 @@ graph TB
 ## Prerequisites
 
 Before starting, ensure you have:
+
 - Completed Guides 1-4 (all infrastructure from Parts 1-4)
 - AWS CLI configured
 - Python with `uv` package manager installed
@@ -88,81 +90,81 @@ Since Guide 4, we need additional AWS permissions for Aurora and related service
 
 ```json
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "RDSPermissions",
-            "Effect": "Allow",
-            "Action": [
-                "rds:CreateDBCluster",
-                "rds:CreateDBInstance",
-                "rds:CreateDBSubnetGroup",
-                "rds:DeleteDBCluster",
-                "rds:DeleteDBInstance",
-                "rds:DeleteDBSubnetGroup",
-                "rds:DescribeDBClusters",
-                "rds:DescribeDBInstances",
-                "rds:DescribeDBSubnetGroups",
-                "rds:DescribeGlobalClusters",
-                "rds:ModifyDBCluster",
-                "rds:ModifyDBInstance",
-                "rds:ModifyDBSubnetGroup",
-                "rds:AddTagsToResource",
-                "rds:ListTagsForResource",
-                "rds:RemoveTagsFromResource",
-                "rds-data:ExecuteStatement",
-                "rds-data:BatchExecuteStatement",
-                "rds-data:BeginTransaction",
-                "rds-data:CommitTransaction",
-                "rds-data:RollbackTransaction"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "EC2Permissions",
-            "Effect": "Allow",
-            "Action": [
-                "ec2:DescribeVpcs",
-                "ec2:DescribeVpcAttribute",
-                "ec2:DescribeSubnets",
-                "ec2:DescribeAvailabilityZones",
-                "ec2:DescribeSecurityGroups",
-                "ec2:CreateSecurityGroup",
-                "ec2:DeleteSecurityGroup",
-                "ec2:AuthorizeSecurityGroupIngress",
-                "ec2:AuthorizeSecurityGroupEgress",
-                "ec2:RevokeSecurityGroupIngress",
-                "ec2:RevokeSecurityGroupEgress",
-                "ec2:CreateTags",
-                "ec2:DescribeTags"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "SecretsManagerPermissions",
-            "Effect": "Allow",
-            "Action": [
-                "secretsmanager:CreateSecret",
-                "secretsmanager:DeleteSecret",
-                "secretsmanager:DescribeSecret",
-                "secretsmanager:GetSecretValue",
-                "secretsmanager:PutSecretValue",
-                "secretsmanager:UpdateSecret"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "KMSPermissions",
-            "Effect": "Allow",
-            "Action": [
-                "kms:CreateGrant",
-                "kms:Decrypt",
-                "kms:DescribeKey",
-                "kms:Encrypt"
-            ],
-            "Resource": "*"
-        }
-    ]
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RDSPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "rds:CreateDBCluster",
+        "rds:CreateDBInstance",
+        "rds:CreateDBSubnetGroup",
+        "rds:DeleteDBCluster",
+        "rds:DeleteDBInstance",
+        "rds:DeleteDBSubnetGroup",
+        "rds:DescribeDBClusters",
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBSubnetGroups",
+        "rds:DescribeGlobalClusters",
+        "rds:ModifyDBCluster",
+        "rds:ModifyDBInstance",
+        "rds:ModifyDBSubnetGroup",
+        "rds:AddTagsToResource",
+        "rds:ListTagsForResource",
+        "rds:RemoveTagsFromResource",
+        "rds-data:ExecuteStatement",
+        "rds-data:BatchExecuteStatement",
+        "rds-data:BeginTransaction",
+        "rds-data:CommitTransaction",
+        "rds-data:RollbackTransaction"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EC2Permissions",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeVpcs",
+        "ec2:DescribeVpcAttribute",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeSecurityGroups",
+        "ec2:CreateSecurityGroup",
+        "ec2:DeleteSecurityGroup",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:CreateTags",
+        "ec2:DescribeTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SecretsManagerPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:DeleteSecret",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:UpdateSecret"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "KMSPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "kms:CreateGrant",
+        "kms:Decrypt",
+        "kms:DescribeKey",
+        "kms:Encrypt"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
 ```
 
@@ -215,6 +217,7 @@ cp terraform.tfvars.example terraform.tfvars
 ```
 
 Edit `terraform.tfvars` and set your values:
+
 ```hcl
 aws_region = "us-east-1"  # Your AWS region
 min_capacity = 0.5        # Minimum ACUs (0.5 = ~$43/month)
@@ -232,6 +235,7 @@ terraform apply
 ```
 
 Type `yes` when prompted. This will create:
+
 - Aurora Serverless v2 cluster with Data API enabled
 - Database credentials in Secrets Manager
 - Security group and subnet configuration
@@ -244,11 +248,13 @@ Deployment takes about 10-15 minutes. After deployment, Terraform will display i
 **Important**: Update your `.env` file with the database values:
 
 1. View the Terraform outputs:
+
    ```bash
    terraform output
    ```
 
 2. Edit the `.env` file in your project root:
+
    - In Cursor's file explorer, click on the `.env` file in the alex directory
    - If you don't see it, make sure hidden files are visible (Cmd+Shift+. on Mac, Ctrl+H on Linux/Windows)
 
@@ -274,6 +280,7 @@ uv run test_data_api.py
 ```
 
 You should see:
+
 ```
 ✅ Successfully connected to Aurora using Data API!
 Database version: PostgreSQL 15.x
@@ -289,6 +296,7 @@ uv run run_migrations.py
 ```
 
 You should see:
+
 ```
 Starting migration: 001_schema.sql
 ✅ Migration completed successfully
@@ -305,6 +313,7 @@ uv run seed_data.py
 ```
 
 You should see:
+
 ```
 Seeding 22 instruments...
 ✅ SPY - SPDR S&P 500 ETF
@@ -324,6 +333,7 @@ uv run reset_db.py --with-test-data
 ```
 
 You should see:
+
 ```
 Dropping all tables...
 Running migrations...
@@ -338,6 +348,30 @@ Test user created:
 - 5 positions in 401k account
 ```
 
+## Step 6: Verify Database Integrity
+
+Finally, run the verification script to get a full report on the database's health. This is a valuable check to confirm
+everything is set up correctly before you proceed to Part 6.
+
+```bash
+1 # From backend/database directory
+2 uv run verify_database.py
+```
+
+The script will output a detailed report summarizing table counts, data integrity, and more. The key thing to look for is the
+final confirmation banner at the end of the report:
+
+```bash
+---
+🎉 DATABASE VERIFICATION COMPLETE
+---
+✅ All tables created successfully
+✅ Instruments loaded with complete allocation data
+✅ All allocation percentages sum to 100%
+✅ Indexes and triggers are in place
+✅ Database is ready for Part 6: Agent Orchestra!
+```
+
 ## Understanding the Database Schema
 
 Our schema includes five tables with clear separation between user-specific and shared reference data:
@@ -348,7 +382,7 @@ erDiagram
     users ||--o{ jobs : "requests"
     accounts ||--o{ positions : "contains"
     positions }o--|| instruments : "references"
-    
+
     users {
         varchar clerk_user_id PK
         varchar display_name
@@ -357,7 +391,7 @@ erDiagram
         jsonb asset_class_targets
         jsonb region_targets
     }
-    
+
     accounts {
         uuid id PK
         varchar clerk_user_id FK
@@ -366,7 +400,7 @@ erDiagram
         decimal cash_balance
         decimal cash_interest
     }
-    
+
     positions {
         uuid id PK
         uuid account_id FK
@@ -374,7 +408,7 @@ erDiagram
         decimal quantity
         date as_of_date
     }
-    
+
     instruments {
         varchar symbol PK
         varchar name
@@ -384,7 +418,7 @@ erDiagram
         jsonb allocation_sectors
         jsonb allocation_asset_class
     }
-    
+
     jobs {
         uuid id PK
         varchar clerk_user_id FK
@@ -418,6 +452,7 @@ All data is validated through Pydantic schemas before database insertion, ensuri
 ## Cost Management
 
 Aurora Serverless v2 costs approximately:
+
 - **Minimum capacity (0.5 ACU)**: ~$43/month
 - **Running normally**: $1.44-$2.88/day
 
@@ -445,18 +480,23 @@ terraform apply
 If you can't connect to the Data API:
 
 1. **Check cluster status**:
+
 ```bash
 aws rds describe-db-clusters --db-cluster-identifier alex-aurora-cluster
 ```
+
 Status should be "available"
 
 2. **Check Data API is enabled**:
+
 ```bash
 aws rds describe-db-clusters --db-cluster-identifier alex-aurora-cluster --query 'DBClusters[0].EnableHttpEndpoint'
 ```
+
 Should return `true`
 
 3. **Verify secrets** (the secret name includes a random suffix):
+
 ```bash
 # List all secrets to find the correct name
 aws secretsmanager list-secrets --query "SecretList[?contains(Name, 'alex-aurora-credentials')].Name"
@@ -464,6 +504,7 @@ aws secretsmanager list-secrets --query "SecretList[?contains(Name, 'alex-aurora
 # Then get the secret value (replace with actual name from above)
 aws secretsmanager get-secret-value --secret-id alex-aurora-credentials-xxxxx --query SecretString --output text | jq .
 ```
+
 Should show username and password
 
 ### Migration Failures
@@ -471,6 +512,7 @@ Should show username and password
 If migrations fail:
 
 1. **Check SQL syntax**:
+
 ```bash
 # From the backend/database directory
 # Migrations are in the migrations subdirectory
@@ -478,6 +520,7 @@ cat migrations/001_schema.sql
 ```
 
 2. **Reset and retry**:
+
 ```bash
 # From the backend/database directory
 uv run reset_db.py
@@ -489,12 +532,13 @@ uv run reset_db.py
 If you see validation errors:
 
 1. **Check allocation sums**:
-All allocation dictionaries must sum to 100.0
+   All allocation dictionaries must sum to 100.0
 
 2. **Check Literal types**:
-Only use allowed values for regions, sectors, and asset classes
+   Only use allowed values for regions, sectors, and asset classes
 
 3. **Review schema definitions**:
+
 ```bash
 # From the backend/database directory
 cat src/schemas.py
@@ -503,6 +547,7 @@ cat src/schemas.py
 ## Next Steps
 
 Excellent! You now have a production-grade database with:
+
 - ✅ Aurora Serverless v2 with Data API (no VPC complexity!)
 - ✅ Complete schema for financial data
 - ✅ Pydantic validation for all data
