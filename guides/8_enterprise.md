@@ -3,6 +3,7 @@
 Welcome to the final guide in the Alex Financial Advisor deployment series! In this guide, we'll transform our application into a production-ready, enterprise-grade system by implementing best practices for scalability, security, monitoring, guardrails, explainability, and observability.
 
 By the end of this guide, your Alex Financial Advisor will be:
+
 - **Scalable**: Ready to handle enterprise-level traffic
 - **Secure**: Protected with multiple layers of security
 - **Monitored**: Full visibility into system health and performance
@@ -27,16 +28,19 @@ Our serverless architecture is already designed for automatic scaling, but let's
 The beauty of our serverless architecture is that AWS automatically scales components based on demand:
 
 1. **Lambda Functions** scale automatically:
+
    - Concurrent executions: Default 1,000 (can be increased to 10,000+)
    - Each agent can handle multiple requests simultaneously
    - No server management required
 
 2. **Aurora Serverless v2** scales automatically:
+
    - From 0.5 to 1 ACU (Aurora Capacity Units) by default
    - Can scale up to 128 ACUs for high traffic
    - Scales in ~15 seconds based on load
 
 3. **API Gateway** handles millions of requests:
+
    - Default throttle: 10,000 requests/second
    - Burst: 5,000 requests
    - Can be increased via AWS support
@@ -50,6 +54,7 @@ The beauty of our serverless architecture is that AWS automatically scales compo
 To prepare for enterprise traffic, you can adjust these settings in the Terraform configurations:
 
 **In `terraform/5_database/main.tf`:**
+
 ```hcl
 resource "aws_rds_cluster" "aurora" {
   # Increase max capacity for high traffic
@@ -61,6 +66,7 @@ resource "aws_rds_cluster" "aurora" {
 ```
 
 **In `terraform/6_agents/main.tf`:**
+
 ```hcl
 resource "aws_lambda_function" "planner" {
   # Increase memory for faster processing
@@ -73,6 +79,7 @@ resource "aws_lambda_function" "planner" {
 ```
 
 **In `terraform/7_frontend/main.tf`:**
+
 ```hcl
 resource "aws_apigatewayv2_stage" "api" {
   # Configure throttling for protection
@@ -88,6 +95,7 @@ resource "aws_apigatewayv2_stage" "api" {
 Before going to production, test your scalability:
 
 **For macOS/Linux:**
+
 ```bash
 # Install Apache Bench
 apt-get install apache2-utils  # Ubuntu/Debian
@@ -99,6 +107,7 @@ ab -n 1000 -c 50 -H "Authorization: Bearer YOUR_TOKEN" \
 ```
 
 **For Windows:**
+
 ```powershell
 # Install Apache Bench via XAMPP or use PowerShell's Invoke-WebRequest
 # Option 1: Download XAMPP which includes Apache Bench
@@ -134,6 +143,7 @@ Our application already implements multiple security best practices. Let's revie
 ### Current Security Implementation
 
 #### 1. **IAM Least Privilege Access**
+
 Each Lambda function has minimal required permissions:
 
 ```hcl
@@ -162,34 +172,46 @@ resource "aws_iam_role_policy" "planner_policy" {
 ```
 
 #### 2. **JWT Authentication with Clerk**
+
 All API calls require valid JWT tokens:
+
 - Tokens expire after 1 hour
 - **JWKS endpoint for key rotation** - Clerk automatically rotates signing keys for security. The JWKS (JSON Web Key Set) endpoint provides the current public keys used to verify JWT signatures. This means even if a key is compromised, it will be automatically rotated, and your application fetches the new keys without any code changes.
 - **User context validated on every request** - Every API call includes a JWT token that is cryptographically verified using Clerk's public keys. This ensures the user is who they claim to be, their session is still valid, and the token hasn't been tampered with. Invalid or expired tokens are rejected before any business logic executes.
 
 #### 3. **API Gateway Throttling**
+
 **Protection against DDoS and abuse** - DDoS (Distributed Denial of Service) attacks attempt to overwhelm your application by flooding it with requests from multiple sources. API Gateway's throttling limits the number of requests per second, automatically rejecting excess traffic. This protects your Lambda functions from being overwhelmed and prevents runaway costs from malicious traffic:
+
 ```hcl
 throttle_rate_limit  = 100   # 100 requests per second per user
 throttle_burst_limit = 200   # Burst capacity
 ```
 
 #### 4. **CORS Controls**
+
 Strict CORS configuration:
+
 - **Origin validation** - Only allows requests from your specific frontend domain, preventing malicious websites from making API calls on behalf of your users
 - **Credentials not allowed with wildcard origins** - Prevents credential theft by ensuring authentication cookies/tokens are only sent to explicitly trusted origins, not to any website
 - **Preflight caching for performance** - Browser caches CORS preflight responses, reducing the number of OPTIONS requests and improving API response times
 
 #### 5. **XSS Protection**
+
 **Cross-Site Scripting (XSS) prevention** - XSS attacks inject malicious scripts into your web pages that execute in users' browsers, potentially stealing credentials or personal data. Content Security Policy (CSP) headers tell the browser which sources of content are trusted, blocking any unauthorized scripts from executing:
+
 ```javascript
 // In frontend pages
-<meta httpEquiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://clerk.com; style-src 'self' 'unsafe-inline';" />
+<meta
+  httpEquiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self' 'unsafe-inline' https://clerk.com; style-src 'self' 'unsafe-inline';"
+/>
 ```
 
 #### 6. **Secrets Management**
+
 Using AWS Secrets Manager:
+
 - Database credentials never in code
 - Automatic rotation capability
 - Encrypted at rest with KMS
@@ -205,6 +227,7 @@ To further enhance security, consider implementing:
 **AWS WAF** provides an additional layer of security by filtering malicious web traffic before it reaches your application. It protects against common attacks like SQL injection, cross-site scripting, and bot traffic. WAF uses rules to inspect incoming requests and can block, allow, or count requests based on conditions you define. While powerful, WAF is a paid add-on service with costs based on the number of rules and requests processed.
 
 Add to `terraform/7_frontend/main.tf`:
+
 ```hcl
 resource "aws_wafv2_web_acl" "api_protection" {
   name  = "alex-api-waf"
@@ -253,6 +276,7 @@ resource "aws_wafv2_web_acl" "api_protection" {
 **VPC Endpoints** allow your Lambda functions to communicate with AWS services without traffic leaving the AWS network. This improves security by avoiding the public internet, reduces data transfer costs, and provides better performance with lower latency. While VPC endpoints are free to create, you pay for data processing (typically $0.01 per GB). This is especially valuable for high-security environments where data should never traverse the public internet.
 
 Keep traffic within AWS network:
+
 ```hcl
 resource "aws_vpc_endpoint" "s3" {
   vpc_id       = aws_vpc.main.id
@@ -272,7 +296,9 @@ resource "aws_guardduty_detector" "main" {
 ```
 
 #### 4. **Parameter Validation**
+
 Add to Lambda functions:
+
 ```python
 from pydantic import validator
 import re
@@ -296,6 +322,7 @@ Let's enhance our logging and create comprehensive CloudWatch dashboards to moni
 First, let's ensure our agents and API have comprehensive logging:
 
 **For the API (backend/api/main.py):**
+
 ```python
 import logging
 import json
@@ -322,45 +349,82 @@ async def trigger_analysis(user=Depends(clerk_guard)):
     StructuredLogger.log_event(
         "ANALYSIS_TRIGGERED",
         user_id=user.clerk_user_id,
-        details={"accounts": len(accounts)}
+        details={"accounts": user_id}
     )
     # ... rest of endpoint
 ```
 
-**For agents (example in backend/planner/lambda_handler.py):**
+**For agents (example in `backend/planner/lambda_handler.py`):**
+
 ```python
 import logging
 import json
+from datetime import datetime, timezone
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-def lambda_handler(event, context):
-    # Log incoming request
+async def run_orchestrator(job_id: str) -> None:
+    start_time = datetime.now(timezone.utc)
+
+    # Fetch the job once so we can log who triggered the run
+    job = db.jobs.find_by_id(job_id)
+    if not job:
+        logger.error(f"Planner: Job {job_id} not found.")
+        return
+    user_id = job["clerk_user_id"]
+
     logger.info(json.dumps({
         "event": "PLANNER_STARTED",
         "job_id": job_id,
         "user_id": user_id,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": start_time.isoformat(),
     }))
 
-    # Log agent delegations
-    for agent in ["reporter", "charter", "retirement"]:
+    # ... perform tagging, price refresh, and build planner task ...
+
+    for agent_name in ["reporter", "charter", "retirement"]:
         logger.info(json.dumps({
             "event": "AGENT_INVOKED",
-            "agent": agent,
+            "agent": agent_name,
             "job_id": job_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }))
 
-    # Log completion
+    # ... run the planner agent with Runner.run(...) ...
+
+    end_time = datetime.now(timezone.utc)
     logger.info(json.dumps({
         "event": "PLANNER_COMPLETED",
         "job_id": job_id,
-        "duration_seconds": duration,
-        "status": "success"
+        "duration_seconds": (end_time - start_time).total_seconds(),
+        "status": "success",
+        "timestamp": end_time.isoformat(),
     }))
 ```
+
+### Deploying and Verifying Logging Changes
+
+After adding structured logging code (as I have already done for you in `backend/planner/lambda_handler.py`), you need to deploy the changes and verify them.
+
+1.  **Package the new code:**
+
+```bash
+# Navigate to the backend directory
+cd backend
+
+# Run the packaging script
+uv run package_docker.py
+```
+
+2.  **Deploy the new package to AWS:**
+
+```bash
+# From the same backend directory
+uv run deploy_all_lambdas.py
+```
+
+3.  **Trigger a new analysis:** Go to your CloudFront website and start a new portfolio analysi, then verify the cloudwatch log.
 
 ### Creating CloudWatch Dashboards
 
@@ -377,7 +441,9 @@ Then:
 And follow the instructions to bring up your new CloudWatch dashboards for Bedrock & SageMaker, and Agent activity.
 
 #### 3. **SQS Queue Monitoring**
+
 Navigate to SQS console to view:
+
 - Messages in flight
 - Message age
 - Throughput metrics
@@ -597,6 +663,7 @@ Modern LLMs and agentic systems provide unprecedented transparency compared to t
 In the early days of deep learning, neural networks were often criticized as "black boxes" - systems that produced outputs without clear reasoning. This was a serious concern in regulated industries like finance and healthcare.
 
 Modern Large Language Models (LLMs) and agentic systems address this concern through:
+
 1. **Natural language explanations** - AI can explain its reasoning in plain English
 2. **Chain-of-thought reasoning** - Step-by-step problem solving that's auditable
 3. **Structured outputs** - Predictable, parseable responses with clear logic
@@ -739,6 +806,7 @@ LangFuse provides comprehensive tracing for LLM applications, giving you visibil
 ### Our Implementation Approach
 
 We've implemented a reusable observability pattern that:
+
 - Works transparently - agents function normally without LangFuse credentials
 - Uses a context manager for automatic trace flushing
 - Instruments the OpenAI Agents SDK via Pydantic Logfire
@@ -759,6 +827,7 @@ We've implemented a reusable observability pattern that:
 **Step 2: Configure Your Environment**
 
 Add your LangFuse credentials to `terraform/6_agents/terraform.tfvars`:
+
 ```hcl
 # LangFuse observability (optional but recommended)
 langfuse_public_key = "pk-lf-xxxxxxxxxx"
@@ -788,6 +857,7 @@ def lambda_handler(event, context):
 ```
 
 The `observe()` context manager:
+
 - Checks for LangFuse environment variables
 - Sets up Pydantic Logfire to instrument OpenAI Agents SDK
 - Configures the appropriate service name (e.g., 'alex_planner_agent')
@@ -799,24 +869,28 @@ The `observe()` context manager:
 **Step 3: Deploy with Observability**
 
 From the `backend` directory:
+
 ```bash
 # Package all agents with observability
 uv run deploy_all_lambdas.py --package
 ```
 
 From the `terraform/6_agents` directory:
+
 ```bash
 # Deploy infrastructure with LangFuse variables
 terraform apply
 ```
 
 From the `backend` directory:
+
 ```bash
 # Watch agent logs in real-time
 uv run watch_agents.py
 ```
 
 Finally, from the `scripts` directory:
+
 ```bash
 # Deploy the complete application
 uv run deploy.py
@@ -832,12 +906,14 @@ Once deployed and running, you have two options for viewing traces:
 In the LangFuse dashboard, you'll see:
 
 1. **Agent Traces**
+
    - Each agent execution appears as a trace
    - Filter by service name: `alex_planner_agent`, `alex_reporter_agent`, etc.
    - See the complete flow of agent interactions
    - View token usage and costs
 
 2. **Performance Metrics**
+
    - Response times for each agent
    - Token consumption patterns
    - Model performance comparison
@@ -864,6 +940,7 @@ uv run watch_agents.py --region us-west-2  # Different region
 ```
 
 The watch script shows:
+
 - Color-coded output by agent (PLANNER=blue, REPORTER=green, etc.)
 - LangFuse-related logs in purple
 - Errors in red
@@ -874,20 +951,25 @@ The watch script shows:
 **If traces aren't appearing in LangFuse:**
 
 1. **Check environment variables are set:**
+
    ```bash
    aws lambda get-function-configuration --function-name alex-planner | grep LANGFUSE
    ```
 
 2. **Verify OPENAI_API_KEY is set** (required for export):
+
    ```bash
    aws lambda get-function-configuration --function-name alex-planner | grep OPENAI_API_KEY
    ```
 
 3. **Watch CloudWatch logs for LangFuse messages:**
+
    ```bash
    uv run watch_agents.py --lookback 5
    ```
+
    Look for messages like:
+
    - "🔍 Observability: Setting up LangFuse..."
    - "✅ Observability: Traces flushed successfully"
    - "❌ Observability: Failed to flush traces"
@@ -914,4 +996,3 @@ You've built a production-ready financial advisory platform that is:
 - **Guarded**: Input validation, output verification, retry logic, and graceful error handling protect against AI failures
 - **Explainable**: AI decisions include rationale, audit trails track all operations, and reasoning is transparent
 - **Observable**: Complete LangFuse integration provides traces, token usage, costs, and performance metrics for every AI interaction
-

@@ -147,12 +147,20 @@ def lambda_handler(event, context):
 
 # For local testing
 if __name__ == "__main__":
-    # Create a test job first
-    test_user_id = "test_user"
+    # Define a test user
+    test_user_id = "test_user_planner_local"
+
+    # Ensure the test user exists before creating a job
+    from src.schemas import UserCreate, JobCreate
     
-    # Create test job
-    from src.schemas import JobCreate
-    
+    user = db.users.find_by_clerk_id(test_user_id)
+    if not user:
+        print(f"Creating test user: {test_user_id}")
+        user_create = UserCreate(clerk_user_id=test_user_id, display_name="Test Planner User")
+        db.users.create(user_create.model_dump(), returning='clerk_user_id')
+
+    # Create a test job
+    print("Creating test job...")
     job_create = JobCreate(
         clerk_user_id=test_user_id,
         job_type='portfolio_analysis',
@@ -162,8 +170,8 @@ if __name__ == "__main__":
         }
     )
     
-    job = db.jobs.create(job_create)
-    job_id = job['id']
+    job = db.jobs.create(job_create.model_dump())
+    job_id = job
     
     print(f"Created test job: {job_id}")
     
