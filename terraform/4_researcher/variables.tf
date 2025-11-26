@@ -25,3 +25,14 @@ variable "scheduler_enabled" {
   type        = bool
   default     = false
 }
+
+
+variable "database_cluster_arn" {
+  description = "Aurora Serverless cluster ARN"
+  type        = string
+}
+
+variable "database_secret_arn" {
+  description = "Aurora DB secret ARN"
+  type        = string
+}

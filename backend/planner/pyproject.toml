@@ -16,3 +16,13 @@ dependencies = [
 
 [tool.uv.sources]
 alex-database = { path = "../database", editable = true }
+
+[tool.setuptools]
+py-modules = [
+    "agent",
+    "lambda_handler",
+    "market",
+    "package_docker",
+    "prices",
+    "templates"
+]

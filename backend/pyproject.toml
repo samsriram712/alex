@@ -6,9 +6,17 @@ dependencies = [
     "alex-database",
     "boto3>=1.40.29",
     "langfuse>=3.3.4",
+    "httpx>=0.28.1",
     "openai-agents>=0.3.0",
+    "openai-agents[litellm]>=0.2.4",
+    "playwright>=1.54.0",
+    "pydantic>=2.11.7",
     "pydantic-ai>=1.0.6",
     "python-dotenv>=1.1.1",
+    "requests>=2.32.4",
+    "tenacity>=9.1.2",
+    "fastapi>=0.116.1",
+    "uvicorn>=0.35.0",
 ]
 
 [tool.uv.workspace]
@@ -16,6 +24,9 @@ members = [
     "database",
     "api",
     "scheduler",
+    "price_refresher",
+    "researcher",
+    "symbol_research",
 ]
 
 [tool.uv.sources]

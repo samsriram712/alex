@@ -98,6 +98,8 @@ def main():
     # Build Docker image
     print(f"\nBuilding Docker image for linux/amd64 with tag: {image_tag}")
     print("(This ensures compatibility with AWS App Runner)")
+    # Ensure we are building from backend so ../database is accessible
+    os.chdir(Path(__file__).parent.parent)
     run_command(
         [
             "docker",
@@ -107,7 +109,9 @@ def main():
             "-t",
             f"{ecr_repository}:{image_tag}",
             # Removed --no-cache to use Docker layer caching for faster builds
-            ".",
+            "-f",
+            "researcher/Dockerfile",  # use Dockerfile from researchee
+            ".",             # specify build context = backend (includes researcher + database)
         ]
     )
 

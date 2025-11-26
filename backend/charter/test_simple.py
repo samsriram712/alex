@@ -13,6 +13,11 @@ from src import Database
 from src.schemas import JobCreate
 from lambda_handler import lambda_handler
 
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
+
 
 def test_charter():
     """Test the charter agent with simple portfolio data"""

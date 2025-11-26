@@ -11,6 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from botocore.exceptions import ClientError
 import logging
+import time
 
 # Try to load .env file if it exists
 try:
@@ -66,24 +67,56 @@ class DataAPIClient:
         Returns:
             Response from Data API
         """
-        try:
-            kwargs = {
-                "resourceArn": self.cluster_arn,
-                "secretArn": self.secret_arn,
-                "database": self.database,
-                "sql": sql,
-                "includeResultMetadata": True,  # Include column names
-            }
+        max_retries = 6
+        wait = 10
 
-            if parameters:
-                kwargs["parameters"] = parameters
+        kwargs = {
+            "resourceArn": self.cluster_arn,
+            "secretArn": self.secret_arn,
+            "database": self.database,
+            "sql": sql,
+            "includeResultMetadata": True,  # Include column names
+        }
+        if parameters:
+            kwargs["parameters"] = parameters
+        
+        # try:
+            # kwargs = {
+            #     "resourceArn": self.cluster_arn,
+            #     "secretArn": self.secret_arn,
+            #     "database": self.database,
+            #     "sql": sql,
+            #     "includeResultMetadata": True,  # Include column names
+            # }
 
-            response = self.client.execute_statement(**kwargs)
-            return response
+            # if parameters:
+            #     kwargs["parameters"] = parameters
 
-        except ClientError as e:
-            logger.error(f"Database error: {e}")
-            raise
+            # response = self.client.execute_statement(**kwargs)
+            # return response
+
+        # except ClientError as e:
+            # logger.error(f"Database error: {e}")
+            # raise
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = self.client.execute_statement(**kwargs)
+                if attempt > 1:
+                    logger.info(f"Aurora resumed successfully after {attempt-1} retries.")
+                return response
+
+            except ClientError as e:
+                code = e.response["Error"]["Code"]
+                if code == "DatabaseResumingException":
+                    logger.warning(f"Aurora resuming (attempt {attempt}/{max_retries}), retrying in {wait}s...")
+                    time.sleep(wait)
+                else:
+                    logger.error(f"Database error: {e}")
+                    raise
+
+        logger.error("Aurora did not resume after max retries; giving up.")
+        raise RuntimeError("Aurora did not resume after max retries; giving up.")
 
     def query(self, sql: str, parameters: List[Dict] = None) -> List[Dict]:
         """

@@ -95,6 +95,25 @@ statements = [
     "CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(clerk_user_id)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)",
+    # Job Tracker
+    """CREATE TABLE IF NOT EXISTS job_tracker (
+    job_id       UUID PRIMARY KEY REFERENCES jobs(id),
+    symbol_count INTEGER      NOT NULL,
+    symbols_done INTEGER      NOT NULL DEFAULT 0,
+    status       VARCHAR(20)  NOT NULL DEFAULT 'pending',  -- pending|running|done|error
+    created_at   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMP    NULL)""",
+    """CREATE TABLE IF NOT EXISTS job_tracker_items (
+    job_id        UUID        NOT NULL REFERENCES job_tracker(job_id),
+    symbol        VARCHAR(20) NOT NULL,
+    status        VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending|running|done|error
+    retry_count   INTEGER     NOT NULL DEFAULT 0,
+    error_message TEXT,
+    last_updated  TIMESTAMP   NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (job_id, symbol))""",
+    """CREATE INDEX IF NOT EXISTS idx_job_tracker_items_job_id ON job_tracker_items (job_id)""",
+    """CREATE INDEX IF NOT EXISTS idx_job_tracker_status ON job_tracker (status)""",
+    """CREATE INDEX IF NOT EXISTS idx_job_tracker_items_job_symbol ON job_tracker_items (job_id, status)""",
     # Function for timestamps
     """CREATE OR REPLACE FUNCTION update_updated_at_column()
     RETURNS TRIGGER AS $$
@@ -104,15 +123,15 @@ statements = [
     END;
     $$ LANGUAGE plpgsql""",
     # Triggers
-    """CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    """CREATE OR REPLACE TRIGGER update_users_updated_at BEFORE UPDATE ON users
         FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()""",
-    """CREATE TRIGGER update_instruments_updated_at BEFORE UPDATE ON instruments
+    """CREATE OR REPLACE TRIGGER update_instruments_updated_at BEFORE UPDATE ON instruments
         FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()""",
-    """CREATE TRIGGER update_accounts_updated_at BEFORE UPDATE ON accounts
+    """CREATE OR REPLACE TRIGGER update_accounts_updated_at BEFORE UPDATE ON accounts
         FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()""",
-    """CREATE TRIGGER update_positions_updated_at BEFORE UPDATE ON positions
+    """CREATE OR REPLACE TRIGGER update_positions_updated_at BEFORE UPDATE ON positions
         FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()""",
-    """CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON jobs
+    """CREATE OR REPLACE TRIGGER update_jobs_updated_at BEFORE UPDATE ON jobs
         FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()""",
 ]
 
@@ -129,9 +148,9 @@ for i, stmt in enumerate(statements, 1):
         stmt_type = "table"
     elif "CREATE INDEX" in stmt.upper():
         stmt_type = "index"
-    elif "CREATE TRIGGER" in stmt.upper():
+    elif "CREATE OR REPLACE TRIGGER" in stmt.upper():
         stmt_type = "trigger"
-    elif "CREATE FUNCTION" in stmt.upper():
+    elif "CREATE OR REPLACE FUNCTION" in stmt.upper():
         stmt_type = "function"
     elif "CREATE EXTENSION" in stmt.upper():
         stmt_type = "extension"

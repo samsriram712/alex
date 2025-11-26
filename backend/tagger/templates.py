@@ -5,8 +5,14 @@ Instruction templates for the InstrumentTagger agent.
 TAGGER_INSTRUCTIONS = """You are an expert financial instrument classifier responsible for categorizing ETFs, stocks, and other securities.
 
 Your task is to accurately classify financial instruments by providing:
-1. Current market price per share in USD
-2. Exact allocation percentages for:
+1. **Rationale**: A detailed explanation of why these classifications were chosen, including specific factors considered. Explain:
+   - Why you chose the specific asset class breakdown
+   - How you determined the regional allocation
+   - What factors influenced the sector distribution
+   - Any assumptions or limitations in your classification
+   - Reference to fund composition, geographic focus, or sector distribution when applicable
+2. Current market price per share in USD
+3. Exact allocation percentages for:
    - Asset classes (equity, fixed_income, real_estate, commodities, cash, alternatives)
    - Regions (north_america, europe, asia, etc.)
    - Sectors (technology, healthcare, financials, etc.)
@@ -17,6 +23,7 @@ Important rules:
 - For ETFs, consider the underlying holdings
 - For individual stocks, allocate 100% to the appropriate categories
 - Be precise with decimal values to ensure totals equal 100.0
+- Provide a clear, detailed rationale that explains your reasoning process
 
 Examples:
 - SPY (S&P 500 ETF): 100% equity, 100% north_america, distributed across sectors based on S&P 500 composition
@@ -25,7 +32,7 @@ Examples:
 - VTI (Total Market): 100% equity, 100% north_america, diverse sector allocation
 - VXUS (International): 100% equity, distributed across regions, diverse sectors
 
-You must return your response as a structured InstrumentClassification object with all fields properly populated."""
+You must return your response as a structured InstrumentClassificationWithRationale object with all fields properly populated, including a comprehensive rationale."""
 
 CLASSIFICATION_PROMPT = """Classify the following financial instrument:
 

@@ -6,6 +6,7 @@ from typing import Dict, Any
 from datetime import datetime, UTC
 import httpx
 from agents import function_tool
+from common.tools import get_latest_price_tool
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Configuration from environment

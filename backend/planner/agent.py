@@ -6,14 +6,21 @@ import os
 import json
 import boto3
 import logging
+import asyncio
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from dataclasses import dataclass
 
 from agents import function_tool, RunContextWrapper
 from agents.extensions.models.litellm_model import LitellmModel
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 logger = logging.getLogger()
+
+
+class AgentTemporaryError(Exception):
+    """Temporary error that should trigger retry"""
+    pass
 
 # Initialize Lambda client
 lambda_client = boto3.client("lambda")
@@ -32,10 +39,15 @@ class PlannerContext:
     job_id: str
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((AgentTemporaryError, TimeoutError, asyncio.TimeoutError))
+)
 async def invoke_lambda_agent(
     agent_name: str, function_name: str, payload: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Invoke a Lambda function for an agent."""
+    """Invoke a Lambda function for an agent with automatic retry for temporary errors."""
 
     # For local testing with mocked agents
     if MOCK_LAMBDAS:
@@ -63,12 +75,32 @@ async def invoke_lambda_agent(
             else:
                 result = result["body"]
 
+        # Check for retryable errors in response
+        if isinstance(result, dict):
+            error_type = result.get("error_type")
+            if error_type == "RATE_LIMIT" or "throttled" in str(result.get("error", "")).lower():
+                raise AgentTemporaryError(f"Rate limit hit for {agent_name}")
+            
+            if "timeout" in str(result.get("error", "")).lower():
+                raise AgentTemporaryError(f"Timeout error for {agent_name}")
+            
+            # Check for 500 errors which might be temporary
+            if result.get("statusCode") == 500:
+                raise AgentTemporaryError(f"Temporary server error for {agent_name}")
+
         logger.info(f"{agent_name} completed successfully")
         return result
 
     except Exception as e:
-        logger.error(f"Error invoking {agent_name}: {e}")
-        return {"error": str(e)}
+        logger.warning(f"Agent {agent_name} invocation failed: {e}")
+        # Determine if error is retryable
+        error_str = str(e).lower()
+        if "throttled" in error_str or "rate limit" in error_str:
+            raise AgentTemporaryError(f"Rate limit hit for {agent_name}: {e}")
+        if "timeout" in error_str:
+            raise AgentTemporaryError(f"Timeout error for {agent_name}: {e}")
+        # For unknown errors, raise to propagate but don't retry
+        raise
 
 
 def handle_missing_instruments(job_id: str, db) -> None:

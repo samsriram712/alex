@@ -12,6 +12,11 @@ from agents import Agent, Runner, trace
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from litellm.exceptions import RateLimitError
 
+
+class AgentTemporaryError(Exception):
+    """Temporary error that should trigger retry"""
+    pass
+
 try:
     from dotenv import load_dotenv
     load_dotenv(override=True)
@@ -22,17 +27,17 @@ except ImportError:
 from src import Database
 
 from templates import CHARTER_INSTRUCTIONS
-from agent import create_agent
+from agent import create_agent, validate_chart_data
 from observability import observe
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 @retry(
-    retry=retry_if_exception_type(RateLimitError),
+    retry=retry_if_exception_type((RateLimitError, AgentTemporaryError, TimeoutError, asyncio.TimeoutError)),
     stop=stop_after_attempt(5),
     wait=wait_exponential(multiplier=1, min=4, max=60),
-    before_sleep=lambda retry_state: logger.info(f"Charter: Rate limit hit, retrying in {retry_state.next_action.sleep} seconds...")
+    before_sleep=lambda retry_state: logger.info(f"Charter: Temporary error, retrying in {retry_state.next_action.sleep} seconds...")
 )
 async def run_charter_agent(job_id: str, portfolio_data: Dict[str, Any], db=None) -> Dict[str, Any]:
     """Run the charter agent to generate visualization data."""
@@ -48,12 +53,36 @@ async def run_charter_agent(job_id: str, portfolio_data: Dict[str, Any], db=None
             model=model
         )
         
-        result = await Runner.run(
-            agent,
-            input=task,
-            max_turns=5  # Reduced since we expect one-shot JSON response
-        )
-        
+        try:
+            result = await Runner.run(
+                agent,
+                input=task,
+                max_turns=5  # Reduced since we expect one-shot JSON response
+            )
+        except (TimeoutError, asyncio.TimeoutError) as e:
+            logger.warning(f"Charter agent timeout: {e}")
+            raise AgentTemporaryError(f"Timeout during agent execution: {e}")
+        except Exception as e:
+            error_str = str(e).lower()
+            if "timeout" in error_str or "throttled" in error_str:
+                logger.warning(f"Charter temporary error: {e}")
+                raise AgentTemporaryError(f"Temporary error: {e}")
+            raise  # Re-raise non-retryable errors
+
+        # Validate output
+        logger.info(f"Raw charter output before validation: {result.final_output[:1000]}")
+
+        is_valid, error_msg, parsed_data = validate_chart_data(result.final_output)
+        # logger.info(f"Output after validation: {parsed_data[:1000]}")
+        logger.info(f"Type of body after return: {type(parsed_data)}")
+
+        if not is_valid:
+            logger.error(f"Charter agent produced invalid output for job {job_id}: {error_msg}")
+            return json.dumps({
+            "charts": [],
+            "error": "Unable to generate charts at this time"
+            })
+
         # Extract and parse JSON from the output
         output = result.final_output
         logger.info(f"Charter: Agent completed, output length: {len(output) if output else 0}")
@@ -123,6 +152,7 @@ async def run_charter_agent(job_id: str, portfolio_data: Dict[str, Any], db=None
             'charts_generated': len(charts_data) if charts_data else 0,
             'chart_keys': list(charts_data.keys()) if charts_data else []
         }
+        
 
 def lambda_handler(event, context):
     """
@@ -136,7 +166,7 @@ def lambda_handler(event, context):
     """
     # Wrap entire handler with observability context
     with observe():
-        try:
+        try:  
             logger.info(f"Charter Lambda invoked with event keys: {list(event.keys()) if isinstance(event, dict) else 'not a dict'}")
 
             # Parse event

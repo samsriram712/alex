@@ -16,6 +16,25 @@ logger = logging.getLogger()
 
 # Context removed - no longer needed without tools
 
+def sanitize_user_input(text: str) -> str:
+    """Remove potential prompt injection attempts"""
+    # Remove common injection patterns
+    dangerous_patterns = [
+        "ignore previous instructions",
+        "disregard all prior",
+        "forget everything",
+        "new instructions:",
+        "system:",
+        "assistant:"
+    ]
+
+    text_lower = text.lower()
+    for pattern in dangerous_patterns:
+        if pattern in text_lower:
+            logger.warning(f"Potential prompt injection detected: {pattern}")
+            return "[INVALID INPUT DETECTED]"
+
+    return text
 
 def calculate_portfolio_value(portfolio_data: Dict[str, Any]) -> float:
     """Calculate current portfolio value."""

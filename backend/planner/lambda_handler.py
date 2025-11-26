@@ -26,6 +26,8 @@ from agent import create_agent, handle_missing_instruments, load_portfolio_summa
 from market import update_instrument_prices
 from observability import observe
 
+from datetime import datetime, timezone
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -40,6 +42,22 @@ db = Database()
 )
 async def run_orchestrator(job_id: str) -> None:
     """Run the orchestrator agent to coordinate portfolio analysis."""
+    start_time = datetime.now(timezone.utc)
+
+    # Fetch the job once so we can log who triggered the run
+    job = db.jobs.find_by_id(job_id)
+    if not job:
+        logger.error(f"Planner: Job {job_id} not found.")
+        return
+    user_id = job["clerk_user_id"]
+
+    logger.info(json.dumps({
+        "event": "PLANNER_STARTED",
+        "job_id": job_id,
+        "user_id": user_id,
+        "timestamp": start_time.isoformat(),
+    }))
+
     try:
         # Update job status to running
         db.jobs.update_status(job_id, 'running')
@@ -57,6 +75,16 @@ async def run_orchestrator(job_id: str) -> None:
         # Create agent with tools and context
         model, tools, task, context = create_agent(job_id, portfolio_summary, db)
         
+        # ... perform tagging, price refresh, and build planner task ...
+
+        for agent_name in ["reporter", "charter", "retirement"]:
+            logger.info(json.dumps({
+                "event": "AGENT_INVOKED",
+                "agent": agent_name,
+                "job_id": job_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }))
+
         # Run the orchestrator
         with trace("Planner Orchestrator"):
             from agent import PlannerContext
@@ -76,7 +104,14 @@ async def run_orchestrator(job_id: str) -> None:
             
             # Mark job as completed after all agents finish
             db.jobs.update_status(job_id, "completed")
-            logger.info(f"Planner: Job {job_id} completed successfully")
+            end_time = datetime.now(timezone.utc)
+            logger.info(json.dumps({
+                "event": "PLANNER_COMPLETED",
+                "job_id": job_id,
+                "duration_seconds": (end_time - start_time).total_seconds(),
+                "status": "success",
+                "timestamp": end_time.isoformat(),
+            }))
             
     except Exception as e:
         logger.error(f"Planner: Error in orchestration: {e}", exc_info=True)

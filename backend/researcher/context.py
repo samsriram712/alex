@@ -19,15 +19,18 @@ Your THREE steps (BE CONCISE):
    - Use browser_snapshot to read content
    - If needed, visit ONE more page for verification
    - DO NOT browse extensively - 2 pages maximum
+   - If the topic includes a stock symbol (e.g., "AAPL analysis"), perform a focused symbol-specific analysis and include the latest price obtained via get_latest_price_tool
+   - Do NOT do general market research if a specific symbol is provided
 
 2. BRIEF ANALYSIS (Keep it short):
-   - Key facts and numbers only
+   - Key facts and numbers only, use current stock prices retrieved using get_latest_price_tool during the research
    - 3-5 bullet points maximum
    - One clear recommendation
    - Be extremely concise
 
 3. SAVE TO DATABASE:
    - Use ingest_financial_document immediately
+   - Include the verified price data in your saved summary where available
    - Topic: "[Asset] Analysis {datetime.now().strftime('%b %d')}"
    - Save your brief analysis
 

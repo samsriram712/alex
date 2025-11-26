@@ -14,6 +14,11 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from litellm.exceptions import RateLimitError
 from judge import evaluate
 
+
+class AgentTemporaryError(Exception):
+    """Temporary error that should trigger retry"""
+    pass
+
 GUARD_AGAINST_SCORE = 0.3  # Guard against score being too low
 
 try:
@@ -35,11 +40,11 @@ logger.setLevel(logging.INFO)
 
 
 @retry(
-    retry=retry_if_exception_type(RateLimitError),
+    retry=retry_if_exception_type((RateLimitError, AgentTemporaryError, TimeoutError, asyncio.TimeoutError)),
     stop=stop_after_attempt(5),
     wait=wait_exponential(multiplier=1, min=4, max=60),
     before_sleep=lambda retry_state: logger.info(
-        f"Reporter: Rate limit hit, retrying in {retry_state.next_action.sleep} seconds..."
+        f"Reporter: Temporary error, retrying in {retry_state.next_action.sleep} seconds..."
     ),
 )
 async def run_reporter_agent(
@@ -60,26 +65,51 @@ async def run_reporter_agent(
             name="Report Writer", instructions=REPORTER_INSTRUCTIONS, model=model, tools=tools
         )
 
-        result = await Runner.run(
-            agent,
-            input=task,
-            context=context,  # Pass the context
-            max_turns=10,
-        )
+        try:
+            result = await Runner.run(
+                agent,
+                input=task,
+                context=context,  # Pass the context
+                max_turns=10,
+            )
 
-        response = result.final_output
+            response = result.final_output
+        except (TimeoutError, asyncio.TimeoutError) as e:
+            logger.warning(f"Reporter agent timeout: {e}")
+            raise AgentTemporaryError(f"Timeout during agent execution: {e}")
+        except Exception as e:
+            error_str = str(e).lower()
+            if "timeout" in error_str or "throttled" in error_str:
+                logger.warning(f"Reporter temporary error: {e}")
+                raise AgentTemporaryError(f"Temporary error: {e}")
+            raise  # Re-raise non-retryable errors
+
+        
 
         if observability:
-            with observability.start_as_current_span(name="judge") as span:
-                evaluation = await evaluate(REPORTER_INSTRUCTIONS, task, response)
-                score = evaluation.score / 100
-                comment = evaluation.feedback
-                span.score(name="Judge", value=score, data_type="NUMERIC", comment=comment)
-                observation = f"Score: {score} - Feedback: {comment}"
-                observability.create_event(name="Judge Event", status_message=observation)
-                if score < GUARD_AGAINST_SCORE:
-                    logger.error(f"Reporter score is too low: {score}")
-                    response = "I'm sorry, I'm not able to generate a report for you. Please try again later."
+            try:
+                with observability.start_as_current_span(name="judge") as span:
+                    evaluation = await evaluate(REPORTER_INSTRUCTIONS, task, response)
+                    score = evaluation.score / 100
+                    comment = evaluation.feedback
+
+                    # Record telemetry safely
+                    try:
+                        span.score(name="Judge", value=score, data_type="NUMERIC", comment=comment)
+                        observation = f"Score: {score} - Feedback: {comment}"
+                        observability.create_event(name="Judge Event", status_message=observation)
+                        
+                    except AttributeError as otel_error:
+                        logger.warning(f"Telemetry scoring failed: {otel_error}")
+
+                    # Business guard logic (keep this!)
+                    if score < GUARD_AGAINST_SCORE:
+                        logger.error(f"Reporter score is too low: {score}")
+                        response = "I'm sorry, I'm not able to generate a report for you. Please try again later."
+
+            except Exception as e:
+                logger.warning(f"Observability or evaluation failed: {e}")
+
 
         # Save the report to database
         report_payload = {

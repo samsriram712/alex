@@ -1,0 +1,15 @@
+[project]
+name = "symbol-research"
+version = "0.1.0"
+description = "Does market research for a stock symbol"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "alex-database",
+    "langfuse>=3.3.4",
+    "pydantic>=2.11.7",
+    "tenacity>=9.1.2",
+    ]
+
+[tool.uv.sources]
+alex-database = { workspace = true }

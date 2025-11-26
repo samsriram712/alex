@@ -10,18 +10,29 @@ from dataclasses import dataclass
 
 from agents import function_tool, RunContextWrapper
 from agents.extensions.models.litellm_model import LitellmModel
+from context import ReporterContext
+
+# from src import Database
+# from src.models import get_latest_price
+
+from tools import (
+    get_market_insights,
+    submit_portfolio_research_job,
+    check_research_job_status,
+    get_latest_price_tool,
+)
 
 logger = logging.getLogger()
 
 
-@dataclass
-class ReporterContext:
-    """Context for the Reporter agent"""
+# @dataclass
+# class ReporterContext:
+#     """Context for the Reporter agent"""
 
-    job_id: str
-    portfolio_data: Dict[str, Any]
-    user_data: Dict[str, Any]
-    db: Optional[Any] = None  # Database connection (optional for testing)
+#     job_id: str
+#    portfolio_data: Dict[str, Any]
+#    user_data: Dict[str, Any]
+#    db: Optional[Any] = None  # Database connection (optional for testing)
 
 
 def calculate_portfolio_metrics(portfolio_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -111,75 +122,6 @@ def format_portfolio_for_analysis(portfolio_data: Dict[str, Any], user_data: Dic
 # update_report tool removed - report is now saved directly in lambda_handler
 
 
-@function_tool
-async def get_market_insights(
-    wrapper: RunContextWrapper[ReporterContext], symbols: List[str]
-) -> str:
-    """
-    Retrieve market insights from S3 Vectors knowledge base.
-
-    Args:
-        wrapper: Context wrapper with job_id and database
-        symbols: List of symbols to get insights for
-
-    Returns:
-        Relevant market context and insights
-    """
-    try:
-        import boto3
-
-        # Get account ID
-        sts = boto3.client("sts")
-        account_id = sts.get_caller_identity()["Account"]
-        bucket = f"alex-vectors-{account_id}"
-
-        # Get embeddings
-        sagemaker_region = os.getenv("DEFAULT_AWS_REGION", "us-east-1")
-        sagemaker = boto3.client("sagemaker-runtime", region_name=sagemaker_region)
-        endpoint_name = os.getenv("SAGEMAKER_ENDPOINT", "alex-embedding-endpoint")
-        query = f"market analysis {' '.join(symbols[:5])}" if symbols else "market outlook"
-
-        response = sagemaker.invoke_endpoint(
-            EndpointName=endpoint_name,
-            ContentType="application/json",
-            Body=json.dumps({"inputs": query}),
-        )
-
-        result = json.loads(response["Body"].read().decode())
-        # Extract embedding (handle nested arrays)
-        if isinstance(result, list) and result:
-            embedding = result[0][0] if isinstance(result[0], list) else result[0]
-        else:
-            embedding = result
-
-        # Search vectors
-        s3v = boto3.client("s3vectors", region_name=sagemaker_region)
-        response = s3v.query_vectors(
-            vectorBucketName=bucket,
-            indexName="financial-research",
-            queryVector={"float32": embedding},
-            topK=3,
-            returnMetadata=True,
-        )
-
-        # Format insights
-        insights = []
-        for vector in response.get("vectors", []):
-            metadata = vector.get("metadata", {})
-            text = metadata.get("text", "")[:200]
-            if text:
-                company = metadata.get("company_name", "")
-                prefix = f"{company}: " if company else "- "
-                insights.append(f"{prefix}{text}...")
-
-        if insights:
-            return "Market Insights:\n" + "\n".join(insights)
-        else:
-            return "Market insights unavailable - proceeding with standard analysis."
-
-    except Exception as e:
-        logger.warning(f"Reporter: Could not retrieve market insights: {e}")
-        return "Market insights unavailable - proceeding with standard analysis."
 
 
 def create_agent(job_id: str, portfolio_data: Dict[str, Any], user_data: Dict[str, Any], db=None):
@@ -201,7 +143,13 @@ def create_agent(job_id: str, portfolio_data: Dict[str, Any], user_data: Dict[st
     )
 
     # Tools - only get_market_insights now, report saved in lambda_handler
-    tools = [get_market_insights]
+    # tools = [get_market_insights, get_latest_price_tool,]
+    tools = [
+    get_market_insights,
+    get_latest_price_tool,
+    submit_portfolio_research_job,
+    check_research_job_status,
+    ]
 
     # Format portfolio for analysis
     portfolio_summary = format_portfolio_for_analysis(portfolio_data, user_data)
@@ -209,16 +157,30 @@ def create_agent(job_id: str, portfolio_data: Dict[str, Any], user_data: Dict[st
     # Create task
     task = f"""Analyze this investment portfolio and write a comprehensive report.
 
+MANDATORY: Always include the current stock price and total value for each holding.
+- Call `get_latest_price_tool` to retrieve prices before analyzing.
+- Format portfolio composition in a markdown table with columns: Symbol | Shares | Price | Total Value.
+- Use `get_market_insights` to enrich the analysis with market context.
+
+Additionally, before generating your final report:
+
+- Extract all holdings' symbols from the portfolio.
+- Call submit_portfolio_research_job(symbols) to request deep research.
+- Then repeatedly call check_research_job_status() until the job is complete.
+- Once research job completes, proceed with the task detailed below
+- Do not generate the final report until after all the researcher jobs have completed.
+
 {portfolio_summary}
 
 Your task:
-1. First, get market insights for the top holdings using get_market_insights()
-2. Analyze the portfolio's current state, strengths, and weaknesses
-3. Generate a detailed, professional analysis report in markdown format
+1. First, get market insights for the top holdings using get_market_insights() to retrieve the Researcher's vector-based analysis
+2. Use get_latest_price_tool to get the latest closing prices for the holdings
+2. Analyze the portfolio's current state, strengths, and weaknesses against the insights and latest closing prices
+3. Generate a detailed, professional analysis report in markdown format. Use the insights to enrich the report's sections.
 
 The report should include:
 - Executive Summary
-- Portfolio Composition Analysis
+- Portfolio Composition Analysis that should include the current stock price
 - Risk Assessment
 - Diversification Analysis
 - Retirement Readiness (based on user goals)

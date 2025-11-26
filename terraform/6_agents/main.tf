@@ -52,6 +52,38 @@ resource "aws_sqs_queue" "analysis_jobs_dlq" {
 }
 
 # ========================================
+# SQS Queue for Symbol-Specific Research Jobs
+# ========================================
+
+# resource "aws_sqs_queue" "symbol_research_dlq" {
+#   name = "alex-symbol-research-dlq"
+
+#   tags = {
+#     Project = "alex"
+#     Part    = "6"
+#   }
+# }
+
+# resource "aws_sqs_queue" "symbol_research" {
+#  name                       = "alex-symbol-research"
+#   delay_seconds              = 0
+#   max_message_size           = 262144
+#   message_retention_seconds  = 86400  # 1 day
+#   receive_wait_time_seconds  = 10
+#   visibility_timeout_seconds = 920    # Slightly > worker Lambda timeout
+
+#   redrive_policy = jsonencode({
+#     deadLetterTargetArn = aws_sqs_queue.symbol_research_dlq.arn
+#     maxReceiveCount     = 3
+#   })
+
+#   tags = {
+#     Project = "alex"
+#     Part    = "6"
+#   }
+# }
+
+# ========================================
 # IAM Role for Lambda Functions
 # ========================================
 
@@ -104,6 +136,14 @@ resource "aws_iam_role_policy" "lambda_agents_policy" {
           "sqs:GetQueueAttributes"
         ]
         Resource = aws_sqs_queue.analysis_jobs.arn
+      },
+      # Allow Reporter to enqueue symbol research jobs
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage"
+        ]
+        Resource = var.symbol_research_queue_arn
       },
       # Lambda invocation for orchestrator to call other agents
       {
@@ -170,8 +210,16 @@ resource "aws_iam_role_policy" "lambda_agents_policy" {
           "bedrock:InvokeModelWithResponseStream"
         ]
         Resource = [
-          "arn:aws:bedrock:${var.bedrock_region}::foundation-model/*",
-          "arn:aws:bedrock:${var.bedrock_region}:*:inference-profile/*"
+          "arn:aws:bedrock:*::foundation-model/*",
+          "arn:aws:bedrock:*:*:inference-profile/*"
+          # "arn:aws:bedrock:us-west-2::foundation-model/*",
+          # "arn:aws:bedrock:us-west-2:*:inference-profile/*",
+          # "arn:aws:bedrock:us-east-2::foundation-model/*",
+          # "arn:aws:bedrock:us-east-2:*:inference-profile/*",
+          # "arn:aws:bedrock:us-east-1::foundation-model/*",
+          # "arn:aws:bedrock:us-east-1:*:inference-profile/*",
+          # "arn:aws:bedrock:ap-southeast-2::foundation-model/*",
+          # "arn:aws:bedrock:ap-southeast-2:*:inference-profile/*"
         ]
       }
     ]
@@ -269,6 +317,17 @@ resource "aws_lambda_event_source_mapping" "planner_sqs" {
   batch_size       = 1
 }
 
+# ========================================
+# SQS Trigger for Symbol Research Worker Lambda
+# ========================================
+
+# resource "aws_lambda_event_source_mapping" "symbol_research_worker_sqs" {
+#   event_source_arn = aws_sqs_queue.symbol_research.arn
+#   function_name    = "alex-symbol-research-worker"
+#   batch_size       = 1
+#   enabled          = true
+# }
+
 # Tagger Lambda
 resource "aws_lambda_function" "tagger" {
   function_name = "alex-tagger"
@@ -338,6 +397,7 @@ resource "aws_lambda_function" "reporter" {
       LANGFUSE_SECRET_KEY = var.langfuse_secret_key
       LANGFUSE_HOST       = var.langfuse_host
       OPENAI_API_KEY      = var.openai_api_key
+      SYMBOL_RESEARCH_QUEUE_URL   = var.symbol_research_queue_url
     }
   }
 

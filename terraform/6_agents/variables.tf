@@ -73,3 +73,8 @@ variable "openai_api_key" {
   default     = ""
   sensitive   = true
 }
+
+# Symbol Research SQS resources from 4_researcher
+variable "symbol_research_queue_arn" {}
+variable "symbol_research_queue_url" {}
+variable "symbol_research_dlq_arn" {}

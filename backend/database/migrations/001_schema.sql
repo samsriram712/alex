@@ -117,3 +117,37 @@ CREATE TRIGGER update_positions_updated_at BEFORE UPDATE ON positions
 
 CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON jobs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Portfolio research job tracker tables
+-- Reuse existing jobs.id (UUID) as job_id
+
+CREATE TABLE IF NOT EXISTS job_tracker (
+    job_id       UUID PRIMARY KEY REFERENCES jobs(id),
+    symbol_count INTEGER      NOT NULL,
+    symbols_done INTEGER      NOT NULL DEFAULT 0,
+    status       VARCHAR(20)  NOT NULL DEFAULT 'pending',  -- pending|running|done|error
+    created_at   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMP    NULL
+);
+
+CREATE TABLE IF NOT EXISTS job_tracker_items (
+    job_id        UUID        NOT NULL REFERENCES job_tracker(job_id),
+    symbol        VARCHAR(20) NOT NULL,
+    status        VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending|running|done|error
+    retry_count   INTEGER     NOT NULL DEFAULT 0,
+    error_message TEXT,
+    last_updated  TIMESTAMP   NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (job_id, symbol)
+);
+
+-- Faster lookups of items for a given job
+CREATE INDEX IF NOT EXISTS idx_job_tracker_items_job_id
+ON job_tracker_items (job_id);
+
+-- Faster polling of jobs by status (Reporter often checks job status)
+CREATE INDEX IF NOT EXISTS idx_job_tracker_status
+ON job_tracker (status);
+
+-- Faster lookups of symbol status for a job (Researcher + Reporter)
+CREATE INDEX IF NOT EXISTS idx_job_tracker_items_job_symbol
+ON job_tracker_items (job_id, status);

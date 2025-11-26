@@ -54,16 +54,24 @@ def package_lambda():
         req_file = temp_path / "requirements.txt"
         req_file.write_text("\n".join(filtered_requirements))
         
+        # Fix to handle files with user access instead of root (-u flag).
+        uid = os.getuid()
+        gid = os.getgid()
         # Use Docker to install dependencies for Lambda's architecture
         docker_cmd = [
             "docker", "run", "--rm",
             "--platform", "linux/amd64",
+            "-u", f"{uid}:{gid}",
             "-v", f"{temp_path}:/build",
             "-v", f"{backend_dir}/database:/database",
             "--entrypoint", "/bin/bash",
             "public.ecr.aws/lambda/python:3.12",
             "-c",
-            """cd /build && pip install --target ./package -r requirements.txt && pip install --target ./package --no-deps /database"""
+            "set -euo pipefail; cd /build && "
+            "mkdir -p package && "
+            "pip install --no-cache-dir --target ./package -r requirements.txt && "
+            "pip install --no-cache-dir --target ./package --no-deps /database"
+            # """cd /build && pip install --target ./package -r requirements.txt && pip install --target ./package --no-deps /database"""
         ]
         
         run_command(docker_cmd)

@@ -3,9 +3,11 @@ InstrumentTagger Agent - Classifies financial instruments using OpenAI Agents SD
 """
 
 import os
+import json
 from typing import List
 import logging
 from decimal import Decimal
+from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from agents import Agent, Runner, trace
@@ -13,6 +15,12 @@ from agents.extensions.models.litellm_model import LitellmModel
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from litellm.exceptions import RateLimitError
+import asyncio
+
+
+class AgentTemporaryError(Exception):
+    """Temporary error that should trigger retry"""
+    pass
 
 from src.schemas import InstrumentCreate
 from templates import TAGGER_INSTRUCTIONS, CLASSIFICATION_PROMPT
@@ -156,11 +164,88 @@ class InstrumentClassification(BaseModel):
         return v
 
 
+class InstrumentClassificationWithRationale(BaseModel):
+    """Structured output with explainability - adds rationale to existing structure"""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    # Rationale MUST come first so LLM generates reasoning before answers
+    rationale: str = Field(
+        description="Detailed explanation of why these classifications were chosen, including specific factors considered"
+    )
+    
+    # Keep existing fields exactly as they are
+    symbol: str = Field(description="Ticker symbol of the instrument")
+    name: str = Field(description="Name of the instrument")
+    instrument_type: str = Field(description="Type: etf, stock, mutual_fund, bond_fund, etc.")
+    current_price: float = Field(description="Current price per share in USD", gt=0)
+    
+    # Use existing allocation models (not Dict)
+    allocation_asset_class: AllocationBreakdown = Field(description="Asset class breakdown")
+    allocation_regions: RegionAllocation = Field(description="Regional breakdown")
+    allocation_sectors: SectorAllocation = Field(description="Sector breakdown")
+    
+    # Keep existing validators
+    @field_validator("allocation_asset_class")
+    def validate_asset_class_sum(cls, v: AllocationBreakdown):
+        total = v.equity + v.fixed_income + v.real_estate + v.commodities + v.cash + v.alternatives
+        if abs(total - 100.0) > 3:  # Allow small floating point errors
+            raise ValueError(f"Asset class allocations must sum to 100.0, got {total}")
+        return v
+
+    @field_validator("allocation_regions")
+    def validate_regions_sum(cls, v: RegionAllocation):
+        total = (
+            v.north_america
+            + v.europe
+            + v.asia
+            + v.latin_america
+            + v.africa
+            + v.middle_east
+            + v.oceania
+            + v.global_
+            + v.international
+        )
+        if abs(total - 100.0) > 3:
+            raise ValueError(f"Regional allocations must sum to 100.0, got {total}")
+        return v
+
+    @field_validator("allocation_sectors")
+    def validate_sectors_sum(cls, v: SectorAllocation):
+        total = (
+            v.technology
+            + v.healthcare
+            + v.financials
+            + v.consumer_discretionary
+            + v.consumer_staples
+            + v.industrials
+            + v.materials
+            + v.energy
+            + v.utilities
+            + v.real_estate
+            + v.communication
+            + v.treasury
+            + v.corporate
+            + v.mortgage
+            + v.government_related
+            + v.commodities
+            + v.diversified
+            + v.other
+        )
+        if abs(total - 100.0) > 3:
+            raise ValueError(f"Sector allocations must sum to 100.0, got {total}")
+        return v
+
+
 async def classify_instrument(
     symbol: str, name: str, instrument_type: str = "etf"
 ) -> InstrumentClassification:
     """
-    Classify a financial instrument using OpenAI Agents SDK.
+    Classify a financial instrument using OpenAI Agents SDK with explainability.
+    
+    The agent generates a detailed rationale explaining its classification decisions,
+    which is logged to CloudWatch for audit and compliance purposes. The rationale
+    is not included in the return value to maintain backward compatibility.
 
     Args:
         symbol: Ticker symbol
@@ -168,7 +253,7 @@ async def classify_instrument(
         instrument_type: Type of instrument
 
     Returns:
-        Complete classification with allocations
+        Complete classification with allocations (without rationale, for backward compatibility)
     """
     try:
         # Initialize the model
@@ -185,20 +270,39 @@ async def classify_instrument(
             symbol=symbol, name=name, instrument_type=instrument_type
         )
 
-        # Run the agent (following gameplan pattern exactly)
-        with trace(f"Classify {symbol}"):
+        # Run the agent with explainability (following gameplan pattern exactly)
+        with trace(f"Classify {symbol} with explainability"):
             agent = Agent(
-                name="InstrumentTagger",
+                name="Instrument Tagger with Explainability",
                 instructions=TAGGER_INSTRUCTIONS,
                 model=model,
                 tools=[],  # No tools needed for classification
-                output_type=InstrumentClassification,  # Specify structured output type
+                output_type=InstrumentClassificationWithRationale,  # Use model with rationale
             )
 
             result = await Runner.run(agent, input=task, max_turns=5)
 
-            # Extract the structured output from RunResult using final_output_as
-            return result.final_output_as(InstrumentClassification)
+            # Extract the structured output with rationale
+            classification_with_rationale = result.final_output_as(InstrumentClassificationWithRationale)
+
+            # Log the rationale for audit trail
+            logger.info(json.dumps({
+                "event": "CLASSIFICATION_RATIONALE",
+                "symbol": symbol,
+                "rationale": classification_with_rationale.rationale,
+                "timestamp": datetime.utcnow().isoformat()
+            }))
+
+            # Convert back to InstrumentClassification (without rationale) for backward compatibility
+            return InstrumentClassification(
+                symbol=classification_with_rationale.symbol,
+                name=classification_with_rationale.name,
+                instrument_type=classification_with_rationale.instrument_type,
+                current_price=classification_with_rationale.current_price,
+                allocation_asset_class=classification_with_rationale.allocation_asset_class,
+                allocation_regions=classification_with_rationale.allocation_regions,
+                allocation_sectors=classification_with_rationale.allocation_sectors,
+            )
 
     except Exception as e:
         logger.error(f"Error classifying {symbol}: {e}")
@@ -219,15 +323,25 @@ async def tag_instruments(instruments: List[dict]) -> List[InstrumentClassificat
 
     # Add retry decorator to classify_instrument calls
     @retry(
-        retry=retry_if_exception_type(RateLimitError),
+        retry=retry_if_exception_type((RateLimitError, AgentTemporaryError, TimeoutError, asyncio.TimeoutError)),
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=1, min=4, max=60),
         before_sleep=lambda retry_state: logger.info(
-            f"Tagger: Rate limit hit, retrying in {retry_state.next_action.sleep} seconds..."
+            f"Tagger: Temporary error, retrying in {retry_state.next_action.sleep} seconds..."
         ),
     )
     async def classify_with_retry(symbol, name, instrument_type):
-        return await classify_instrument(symbol, name, instrument_type)
+        try:
+            return await classify_instrument(symbol, name, instrument_type)
+        except (TimeoutError, asyncio.TimeoutError) as e:
+            logger.warning(f"Tagger agent timeout: {e}")
+            raise AgentTemporaryError(f"Timeout during classification: {e}")
+        except Exception as e:
+            error_str = str(e).lower()
+            if "timeout" in error_str or "throttled" in error_str:
+                logger.warning(f"Tagger temporary error: {e}")
+                raise AgentTemporaryError(f"Temporary error: {e}")
+            raise  # Re-raise non-retryable errors
 
     # Process instruments sequentially with small delay
     results = []

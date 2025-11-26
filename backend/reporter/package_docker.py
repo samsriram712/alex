@@ -55,6 +55,9 @@ def package_lambda():
         req_file = temp_path / "requirements.txt"
         req_file.write_text("\n".join(filtered_requirements))
 
+        # Fix to handle files with user access instead of root (-u flag).
+        uid = os.getuid()
+        gid = os.getgid()
         # Use Docker to install dependencies for Lambda's architecture
         docker_cmd = [
             "docker",
@@ -62,15 +65,20 @@ def package_lambda():
             "--rm",
             "--platform",
             "linux/amd64",
-            "-v",
-            f"{temp_path}:/build",
-            "-v",
-            f"{backend_dir}/database:/database",
+            "-u", f"{uid}:{gid}",
+            "-v", f"{temp_path}:/build",
+            "-v", f"{backend_dir}/database:/database",
+            # "-v", f"{backend_dir}/common:/common",  # NEW: mount commo
             "--entrypoint",
             "/bin/bash",
             "public.ecr.aws/lambda/python:3.12",
             "-c",
-            """cd /build && pip install --target ./package -r requirements.txt && pip install --target ./package --no-deps /database""",
+            "set -euo pipefail; cd /build && "
+            "mkdir -p package && "
+            "pip install --no-cache-dir --target ./package -r requirements.txt && "
+            "pip install --no-cache-dir --target ./package --no-deps /database"
+            # "pip install --no-cache-dir --target ./package --no-deps /common"  # NEW: install common
+            # """cd /build && pip install --target ./package -r requirements.txt && pip install --target ./package --no-deps /database"""
         ]
 
         run_command(docker_cmd)
@@ -81,6 +89,13 @@ def package_lambda():
         shutil.copy(reporter_dir / "templates.py", package_dir)
         shutil.copy(reporter_dir / "observability.py", package_dir)
         shutil.copy(reporter_dir / "judge.py", package_dir)
+        shutil.copy(reporter_dir / "context.py", package_dir)
+
+        # NEW: copy reporter tools
+        shutil.copy(reporter_dir / "tools.py", package_dir)
+        shutil.copy(reporter_dir / "__init__.py", package_dir)  # optional but keeps 'reporter' as a package
+
+        shutil.copytree(backend_dir / "common", package_dir / "common")
 
         # Create the zip file
         zip_path = reporter_dir / "reporter_lambda.zip"

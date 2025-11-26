@@ -34,7 +34,19 @@ load_dotenv(override=True)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+class StructuredLogger:
+    @staticmethod
+    def log_event(event_type, user_id=None, details=None):
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "event_type": event_type,
+            "user_id": user_id,
+            "details": details
+        }
+        logger.info(json.dumps(log_entry))
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -496,6 +508,12 @@ async def trigger_analysis(request: AnalyzeRequest, clerk_user_id: str = Depends
     try:
         # Get user
         user = db.users.find_by_clerk_id(clerk_user_id)
+        
+        StructuredLogger.log_event(
+            "ANALYSIS_TRIGGERED",
+            user_id=clerk_user_id,
+            details={"accounts": len(db.accounts.find_by_user(clerk_user_id))}
+        )
 
         if not user:
             raise HTTPException(status_code=404, detail="User not found")

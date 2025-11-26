@@ -17,8 +17,8 @@ class BaseModel:
     
     table_name = None
     
-    def __init__(self, db: DataAPIClient):
-        self.db = db
+    def __init__(self, db: DataAPIClient = None):
+        self.db = db or Database()
         if not self.table_name:
             raise ValueError("table_name must be defined")
     
@@ -124,6 +124,23 @@ class Instruments(BaseModel):
         params = [{'name': 'query', 'value': {'stringValue': f'%{query}%'}}]
         return self.db.query(sql, params)
 
+    def get_latest_price(self, symbols: list[str]) -> list[dict]:
+        
+        # Dynamically create placeholders for IN clause
+        placeholders = ", ".join([f":symbol{i}" for i in range(len(symbols))])
+        
+        sql = f"""
+        SELECT symbol, current_price
+        FROM instruments
+        WHERE symbol IN ({placeholders})
+        ORDER BY symbol;
+        """
+        # params = [{"name": "symbols", "value": {"stringValue": ",".join(symbols)}}]
+        params = [
+        {"name": f"symbol{i}", "value": {"stringValue": sym}}
+        for i, sym in enumerate(symbols)
+        ]
+        return self.db.query_raw(sql, params)
 
 class Accounts(BaseModel):
     """Accounts table operations"""
@@ -318,3 +335,15 @@ class Database:
     def query_raw(self, sql: str, parameters: List[Dict] = None) -> List[Dict]:
         """Execute raw SELECT query"""
         return self.client.query(sql, parameters)
+
+# --------------------------------------------------------------------
+# Public convenience helper to fetch latest stock prices
+# --------------------------------------------------------------------
+def get_latest_price(symbols: list[str]) -> list[dict]:
+    """
+    Module-level helper so other components (Reporter, Researcher, etc.)
+    can call get_latest_price(["AAPL", "GOOG"]) without referencing Instruments directly.
+    """
+    # Local import avoids circular dependencies
+    # from . import Instruments
+    return Instruments().get_latest_price(symbols)

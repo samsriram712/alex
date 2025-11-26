@@ -1,0 +1,115 @@
+{
+    "records": [
+        [
+            {
+                "stringValue": "GOOGL"
+            },
+            {
+                "stringValue": "276.4100"
+            },
+            {
+                "stringValue": "2025-11-16 00:52:33.567051"
+            }
+        ],
+        [
+            {
+                "stringValue": "IWM"
+            },
+            {
+                "stringValue": "237.4800"
+            },
+            {
+                "stringValue": "2025-11-16 00:52:33.514033"
+            }
+        ],
+        [
+            {
+                "stringValue": "SPY"
+            },
+            {
+                "stringValue": "671.9300"
+            },
+            {
+                "stringValue": "2025-11-16 00:52:33.462479"
+            }
+        ],
+        [
+            {
+                "stringValue": "AAPL"
+            },
+            {
+                "stringValue": "272.4100"
+            },
+            {
+                "stringValue": "2025-11-16 00:52:33.411014"
+            }
+        ],
+        [
+            {
+                "stringValue": "AMZN"
+            },
+            {
+                "stringValue": "234.6900"
+            },
+            {
+                "stringValue": "2025-11-16 00:52:33.358189"
+            }
+        ],
+        [
+            {
+                "stringValue": "MSFT"
+            },
+            {
+                "stringValue": "510.1800"
+            },
+            {
+                "stringValue": "2025-11-16 00:52:33.306931"
+            }
+        ],
+        [
+            {
+                "stringValue": "NVDA"
+            },
+            {
+                "stringValue": "190.1700"
+            },
+            {
+                "stringValue": "2025-11-16 00:52:33.254446"
+            }
+        ],
+        [
+            {
+                "stringValue": "PLTR"
+            },
+            {
+                "stringValue": "174.0100"
+            },
+            {
+                "stringValue": "2025-11-16 00:52:33.201901"
+            }
+        ],
+        [
+            {
+                "stringValue": "BND"
+            },
+            {
+                "stringValue": "74.1600"
+            },
+            {
+                "stringValue": "2025-11-16 00:52:33.149459"
+            }
+        ],
+        [
+            {
+                "stringValue": "VXUS"
+            },
+            {
+                "stringValue": "74.9300"
+            },
+            {
+                "stringValue": "2025-11-16 00:52:33.094484"
+            }
+        ]
+    ],
+    "numberOfRecordsUpdated": 0
+}
