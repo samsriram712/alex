@@ -4,7 +4,7 @@ MCP server configurations for the Alex Researcher
 from agents.mcp import MCPServerStdio
 
 
-def create_playwright_mcp_server(timeout_seconds=60):
+def create_playwright_mcp_server(timeout_seconds=180):
     """Create a Playwright MCP server instance for web browsing.
     
     Args:
@@ -13,9 +13,10 @@ def create_playwright_mcp_server(timeout_seconds=60):
     Returns:
         MCPServerStdio instance configured for Playwright
     """
+    import subprocess
+    import shutil
     # Base arguments
     args = [
-        "@playwright/mcp@latest",
         "--headless",
         "--isolated", 
         "--no-sandbox",
@@ -25,23 +26,32 @@ def create_playwright_mcp_server(timeout_seconds=60):
     
     # Add executable path in Docker environment
     import os
-    import glob
+    # import glob
     if os.path.exists("/.dockerenv") or os.environ.get("AWS_EXECUTION_ENV"):
         # Find the installed Chrome executable dynamically
-        chrome_paths = glob.glob("/root/.cache/ms-playwright/chromium-*/chrome-linux/chrome")
-        if chrome_paths:
+        # chrome_paths = glob.glob("/root/.cache/ms-playwright/chromium-*/chrome-linux/chrome")
+        # if chrome_paths:
             # Use the first (should be only one) Chrome installation found
-            chrome_path = chrome_paths[0]
-            print(f"DEBUG: Found Chrome at: {chrome_path}")
-            args.extend(["--executable-path", chrome_path])
-        else:
+            # chrome_path = chrome_paths[0]
+            # print(f"DEBUG: Found Chrome at: {chrome_path}")
+            # args.extend(["--executable-path", chrome_path])
+        # else:
             # Fallback to a known path if glob doesn't find it
-            print("DEBUG: Chrome not found via glob, using fallback path")
-            args.extend(["--executable-path", "/root/.cache/ms-playwright/chromium-1187/chrome-linux/chrome"])
+            # print("DEBUG: Chrome not found via glob, using fallback path")
+            # args.extend(["--executable-path", "/root/.cache/ms-playwright/chromium-1187/chrome-linux/chrome"])
+        chrome = shutil.which("chromium")
+        if not chrome:
+            raise RuntimeError("Chromium binary not found in PATH")
+
+        print("CHROMIUM FOUND AT:", chrome, file=os.sys.stderr)
+
+        args.extend(["--executable-path", chrome])    
     
     params = {
         "command": "npx",
-        "args": args
+        "args": ["@playwright/mcp@0.0.48"] + args
     }
     
+    print("NPX VERSION:", subprocess.run(["npx", "--version"], capture_output=True, text=True).stdout)
+
     return MCPServerStdio(params=params, client_session_timeout_seconds=timeout_seconds)

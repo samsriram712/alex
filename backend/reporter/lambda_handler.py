@@ -1,8 +1,36 @@
 """
 Report Writer Agent Lambda Handler
 """
+print("========== IMPORT DIAGNOSTIC START ==========")
 
-import os
+import os, sys
+
+# Force src to be importable
+sys.path.insert(0, os.path.join(os.getcwd(), "src"))
+
+# Alias src as database for legacy imports
+import src
+sys.modules["database"] = src
+sys.modules["database.src"] = src
+
+print("database in sys.modules?", "database" in sys.modules)
+
+sys.path.insert(0, os.getcwd())
+print("PYTHONPATH:", os.environ.get("PYTHONPATH"))
+print("SYS.PATH:")
+for p in sys.path:
+    print(" ", p)
+print("CWD:", os.getcwd())
+
+print("\nListing /var/task:")
+print(os.listdir("/var/task"))
+
+if os.path.exists("/var/task/src"):
+    print("\n/src contents:")
+    print(os.listdir("/var/task/src"))
+else:
+    print("\n/src NOT FOUND")
+
 import json
 import asyncio
 import logging
@@ -28,16 +56,29 @@ try:
 except ImportError:
     pass
 
+print("========== ABOUT TO IMPORT DATABASE ==========")
+
 # Import database package
-from src import Database
+from src.models import Database
+
+print("========== DATABASE IMPORT SUCCEEDED ==========")
 
 from templates import REPORTER_INSTRUCTIONS
+
+print("========== REPORTER_INSTRUCTIONS IMPORT SUCCEEDED ==========")
+
 from agent import create_agent, ReporterContext
+
+print("========== AGENT IMPORT SUCCEEDED ==========")
+
 from observability import observe
+
+print("========== ALL IMPORTS SUCCEEDED ==========")
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+print("========== LOGGER INITIALISED ==========")
 
 @retry(
     retry=retry_if_exception_type((RateLimitError, AgentTemporaryError, TimeoutError, asyncio.TimeoutError)),
@@ -70,7 +111,7 @@ async def run_reporter_agent(
                 agent,
                 input=task,
                 context=context,  # Pass the context
-                max_turns=10,
+                max_turns=20,
             )
 
             response = result.final_output

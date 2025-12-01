@@ -387,6 +387,7 @@ resource "aws_lambda_function" "symbol_worker" {
       DATABASE_NAME      = "alex"
       AURORA_CLUSTER_ARN = var.database_cluster_arn
       AURORA_SECRET_ARN  = var.database_secret_arn
+      DEFAULT_AWS_REGION = var.aws_region
     }
   }
 

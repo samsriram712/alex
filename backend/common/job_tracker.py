@@ -82,7 +82,7 @@ class JobTracker:
             """
             UPDATE job_tracker_items
             SET status='done', last_updated=NOW()
-            WHERE job_id=:job_id AND symbol=:symbol
+            WHERE job_id=:job_id AND symbol=:symbol 
             """,
             [
                 {"name": "job_id", "value": {"stringValue": job_id}, "typeHint": "UUID"},
@@ -104,7 +104,7 @@ class JobTracker:
             """
             UPDATE job_tracker
             SET status='done', completed_at=NOW()
-            WHERE job_id=:job_id AND symbols_done = symbol_count
+            WHERE job_id=:job_id AND symbols_done >= symbol_count
             """,
             [{"name": "job_id", "value": {"stringValue": job_id}, "typeHint": "UUID"}]
         )
@@ -178,4 +178,4 @@ class JobTracker:
             return False
 
         r = row[0]
-        return r["symbol_count"] == r["symbols_done"] and r["status"] == "done"
+        return r["symbol_count"] >= r["symbols_done"] and r["status"] == "done"

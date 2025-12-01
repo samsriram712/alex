@@ -10,6 +10,11 @@ ALLOWED_PREFIXES = [
     "jmespath",
     "s3transfer",
     "langfuse",
+    "pydantic",      # ✅ REQUIRED
+    "alex",          # ✅ alex_database
+    "typing_extensions",
+    "typing_inspection",
+    "annotated_types",
 ]
 
 def should_include(dep_name: str) -> bool:
@@ -94,6 +99,19 @@ def create_lambda_package():
         shutil.copy2(worker_file, package_dir / "worker.py")
     else:
         raise RuntimeError("ERROR: worker.py not found in symbol_research directory.")
+
+    # ----------------------------------------------------------
+    # Copy database/src → package/database
+    # ----------------------------------------------------------
+    database_src = project_root / "database" / "src"
+    database_dst = package_dir / "database/src"
+
+    if database_src.exists():
+        print(f"Copying database package from {database_src}")
+        shutil.copytree(database_src, database_dst, dirs_exist_ok=True)
+    else:
+        print("WARNING: database/src not found – Database will not be packaged!")
+
 
     # -------------------------------
     # Create ZIP package

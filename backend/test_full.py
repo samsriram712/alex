@@ -123,7 +123,7 @@ def main():
     print("-" * 50)
     
     start_time = time.time()
-    timeout = 180  # 3 minutes
+    timeout = 600  # 10 minutes
     last_status = None
     
     while time.time() - start_time < timeout:

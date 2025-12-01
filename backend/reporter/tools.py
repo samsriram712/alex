@@ -1,6 +1,7 @@
 import json
 import os
 from typing import List
+import asyncio
 
 import boto3
 from common.job_tracker import JobTracker
@@ -10,8 +11,11 @@ from agents import RunContextWrapper  # or your actual wrapper import
 from agents import function_tool             # adjust if you use a different decorator
 
 from context import ReporterContext
+from uuid import UUID
+from datetime import datetime, timezone
 
 import logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
 SQS_QUEUE_URL = os.environ["SYMBOL_RESEARCH_QUEUE_URL"]
@@ -21,13 +25,26 @@ sqs = boto3.client("sqs")
 @function_tool
 async def submit_portfolio_research_job(
     wrapper: RunContextWrapper[ReporterContext],
-    job_id: str,
     symbols: List[str],
-) -> dict:
+    ) -> dict:
     """
     Attach job tracker rows to an existing jobs.id and enqueue one SQS message per symbol.
     """
+    job_id = wrapper.context.job_id   # ✅ Always correct UUID
+    UUID(job_id)  # Raises ValueError if invalid
+    
     logger.info(f"[Reporter] Starting submit_portfolio_research_job job_id={job_id}")
+
+    tracker = JobTracker()
+    # ✅ HARD IDEMPOTENCY GUARD
+    existing = tracker.get_job_status(job_id)
+    if existing is not None:
+        logger.warning(f"[Reporter] Job {job_id} already exists. Skipping resubmission.")
+        return {
+            "job_id": job_id,
+            "status": existing.get("status", "exists"),
+            "message": "Research job already submitted. Skipping duplicate invocation."
+        }
 
     portfolio = wrapper.context.portfolio_data
     symbols = {
@@ -39,7 +56,6 @@ async def submit_portfolio_research_job(
 
     logger.info(f"[Reporter] Unique symbols for research: job_id={job_id}, symbols={symbols}")
     
-    tracker = JobTracker()
 
     # 1) Initialise tracker rows
     tracker.init_tracker_for_job(job_id=job_id, symbols=symbols)
@@ -62,19 +78,51 @@ async def submit_portfolio_research_job(
 
     logger.info(f"[Reporter] Submitted symbol research job: job_id={job_id}, symbols={symbols}")
 
+    await asyncio.sleep(3)
+
     return {"job_id": job_id, "symbol_count": len(symbols)}
 
 
 @function_tool
-async def check_research_job_status(job_id: str) -> dict:
+async def check_research_job_status(
+    wrapper: RunContextWrapper[ReporterContext]
+    ) -> dict:
     """
     Returns job_tracker + job_tracker_items for a given job_id.
     """
+    job_id = wrapper.context.job_id   # ✅ Always correct UUID
+    UUID(job_id)  # Raises ValueError if invalid
+
     tracker = JobTracker()
+
     status = tracker.get_job_status(job_id)
     if status is None:
         return {"job_id": job_id, "status": "not_found"}
 
+    # ✅ Initial backoff if job is still "young"
+    created = status.get("created_at")
+    if created:
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+
+        age = (datetime.now(timezone.utc) - created).total_seconds()
+        if age < 30:
+            await asyncio.sleep(30 - age)
+        else:
+            await asyncio.sleep(15)
+
+            
+    if tracker.is_job_complete(job_id):
+        return {
+            "job_id": job_id,
+            "status": "done"
+        }
+
+    # ✅ Normal poll pacing
+    # await asyncio.sleep(15)
     return status
 
 @function_tool

@@ -83,6 +83,12 @@ def package_lambda():
 
         run_command(docker_cmd)
 
+        # 👇 ADD database HERE
+        # from pathlib import Path
+
+        database_src = Path("../database/src").resolve()
+        shutil.copytree(database_src, os.path.join(package_dir, "database"))
+
         # Copy Lambda handler, agent, templates, and observability
         shutil.copy(reporter_dir / "lambda_handler.py", package_dir)
         shutil.copy(reporter_dir / "agent.py", package_dir)
