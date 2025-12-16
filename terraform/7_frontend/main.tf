@@ -219,6 +219,10 @@ resource "aws_lambda_function" "api" {
 
       # CORS configuration
       CORS_ORIGINS = "http://localhost:3000,https://${aws_cloudfront_distribution.main.domain_name}"
+
+      # Ability to run in DEV_MODE = true
+      DEV_MODE      = var.dev_mode
+      DEV_USER_ID   = var.dev_user_id
     }
   }
 
@@ -239,10 +243,10 @@ resource "aws_apigatewayv2_api" "main" {
 
   cors_configuration {
     allow_credentials = false  # Cannot be true when allow_origins is "*"
-    allow_headers     = ["authorization", "content-type", "x-amz-date", "x-api-key", "x-amz-security-token"]
-    allow_methods     = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_headers     = ["Authorization", "content-type", "x-amz-date", "x-api-key", "x-amz-security-token"]
+    allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     allow_origins     = ["*"]  # CORS is handled in Lambda via environment variables
-    max_age           = 300
+    max_age           = 86400
   }
 }
 

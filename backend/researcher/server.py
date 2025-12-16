@@ -20,6 +20,7 @@ from database.src.models import Database
 from common.job_tracker import JobTracker
 from common.tools import get_latest_price_tool  # shared tool
 # ingest_financial_document already imported from researcher.tools
+from agents.mcp import MCPServerStdio
 
 class AgentTemporaryError(Exception):
     """Temporary error that should trigger retry"""
@@ -53,9 +54,30 @@ class ResearchRequest(BaseModel):
     ),
 )
 
+def build_brave_mcp_params():
+    api_key = os.getenv("BRAVE_API_KEY")
+    if not api_key:
+        raise RuntimeError("BRAVE_API_KEY is not set")
 
-async def run_research_agent(topic: str = None) -> str:
-    """Run the research agent to generate investment advice with automatic retry for temporary errors."""
+    return {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+        "env": {"BRAVE_API_KEY": api_key},
+    }
+
+async def run_research_agent(
+    topic: str | None = None,
+    *,
+    use_browser: bool = True,
+) -> str:
+    """
+    Run the research agent to generate investment advice with automatic retry for temporary errors.
+    
+    Dual-mode Researcher:
+
+    use_browser=True  -> Brave + MCP browser (general / scheduler research)
+    use_browser=False -> Brave only (symbol research)
+    """
 
     # Prepare the user query
     if topic:
@@ -81,22 +103,54 @@ async def run_research_agent(topic: str = None) -> str:
 
     tools = [ingest_financial_document, get_latest_price_tool]
 
+# --- Brave MCP (enabled for BOTH modes) ---
+    brave_params = build_brave_mcp_params()
+
     # Create and run the agent with MCP server
     try:
+        browser_budget = 1 if use_browser else 0
         with trace("Researcher"):
-            async with create_playwright_mcp_server(timeout_seconds=60) as playwright_mcp:
-                agent = Agent(
-                    name="Alex Investment Researcher",
-                    instructions=get_agent_instructions(),
-                    model=model,
-                    # tools=[ingest_financial_document],
-                    tools=tools,
-                    mcp_servers=[playwright_mcp],
-                )
 
-                result = await Runner.run(agent, input=query, max_turns=15)
+            # Always enable Brave MCP
+            async with MCPServerStdio(
+                params=brave_params,
+                client_session_timeout_seconds=30,
+            ) as brave_mcp:
+
+                mcp_servers = [brave_mcp]
+                if use_browser:
+                    # GENERAL MODE → Add Playwright MCP
+                    async with create_playwright_mcp_server(timeout_seconds=60) as playwright_mcp:
+                        agent = Agent(
+                            name="Alex Investment Researcher",
+                            instructions=get_agent_instructions() + f"\n\nBROWSER BUDGET: {browser_budget} page load(s) maximum.",
+                            model=model,
+                            # tools=[ingest_financial_document],
+                            tools=tools,
+                            mcp_servers=[brave_mcp, playwright_mcp],
+                        )
+
+                        result = await Runner.run(agent, input=query, max_turns=15)
+                        if hasattr(result, "events"):
+                            tool_calls = [e for e in result.events if getattr(e, "type", None) == "tool_call"]
+                            logging.info(f"TOOLS USED: {[getattr(t, 'name', '?') for t in tool_calls]}")
+                else:
+                    # SYMBOL MODE → NO BROWSER
+                    agent = Agent(
+                        name="Alex Symbol Researcher",
+                        instructions=get_agent_instructions() + f"\n\nBROWSER BUDGET: {browser_budget} page load(s) maximum.",
+                        model=model,
+                        tools=tools,
+                        mcp_servers=[brave_mcp],
+                    )
+
+                    result = await Runner.run(agent, input=query, max_turns=15)
+                    if hasattr(result, "events"):
+                        tool_calls = [e for e in result.events if getattr(e, "type", None) == "tool_call"]
+                        logging.info(f"TOOLS USED: {[getattr(t, 'name', '?') for t in tool_calls]}")
 
         return result.final_output
+
     except (TimeoutError, asyncio.TimeoutError) as e:
         logging.warning(f"Researcher agent timeout: {e}")
         raise AgentTemporaryError(f"Timeout during agent execution: {e}")
@@ -131,7 +185,7 @@ async def research(request: ResearchRequest) -> str:
     If no topic is provided, the agent will pick a trending topic.
     """
     try:
-        response = await run_research_agent(request.topic)
+        response = await run_research_agent(request.topic, use_browser=True)
         return response
     except Exception as e:
         print(f"Error in research endpoint: {e}")
@@ -150,7 +204,7 @@ async def research_auto():
     """
     try:
         # Always use agent's choice for automated runs
-        response = await run_research_agent(topic=None)
+        response = await run_research_agent(topic=None, use_browser=True)
         return {
             "status": "success",
             "timestamp": datetime.now(UTC).isoformat(),
@@ -194,7 +248,7 @@ async def research_symbol(payload: dict):
 
     try:
         # Reuse existing pipeline
-        result = await run_research_agent(topic)
+        result = await run_research_agent(topic, use_browser=False)
 
         tracker.mark_symbol_done(job_id, symbol)
 

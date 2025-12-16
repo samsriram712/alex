@@ -75,6 +75,12 @@ def package_lambda():
         ]
         
         run_command(docker_cmd)
+
+        # 👇 ADD database HERE
+        # from pathlib import Path
+
+        database_src = Path("../database/src").resolve()
+        shutil.copytree(database_src, os.path.join(package_dir, "database"))
         
         # Copy Lambda handler, agent, templates, and observability
         shutil.copy(retirement_dir / "lambda_handler.py", package_dir)
@@ -82,6 +88,8 @@ def package_lambda():
         shutil.copy(retirement_dir / "templates.py", package_dir)
         shutil.copy(retirement_dir / "observability.py", package_dir)
         
+        shutil.copytree(backend_dir / "common", package_dir / "common")
+        shutil.copytree(backend_dir / "producers", package_dir / "producers")
         # Create the zip file
         zip_path = retirement_dir / "retirement_lambda.zip"
         

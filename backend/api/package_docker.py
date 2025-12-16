@@ -66,6 +66,18 @@ def main():
         else:
             print(f"Warning: Database package not found at {database_src}")
 
+        # Copy common package
+        common_src = backend_dir / "common"
+        common_dst = package_dir / "common"
+        if common_src.exists():
+            shutil.copytree(common_src, common_dst, ignore=shutil.ignore_patterns(
+                    "__pycache__", "*.pyc"
+            ))
+            print(f"Copied common package from {common_src}")
+        else:
+            print(f"Warning: Common package not found at {common_src}")
+
+
         # Create requirements.txt from pyproject.toml
         requirements_file = package_dir / "requirements.txt"
         with open(requirements_file, "w") as f:
@@ -77,6 +89,8 @@ def main():
             f.write("fastapi-clerk-auth>=0.0.7\n")
             f.write("pydantic>=2.0.0\n")
             f.write("python-dotenv>=1.0.0\n")
+            f.write("httpx>=0.28.1\n")
+            f.write("python-jose>=3.5.0\n")
 
         # Create Dockerfile
         dockerfile_content = """

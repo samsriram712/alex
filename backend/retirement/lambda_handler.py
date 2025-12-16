@@ -2,7 +2,17 @@
 Retirement Specialist Agent Lambda Handler
 """
 
-import os
+import os, sys
+# Force src to be importable
+sys.path.insert(0, os.path.join(os.getcwd(), "src"))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# Alias src as database for legacy imports
+import src
+sys.modules["database"] = src
+sys.modules["database.src"] = src
 import json
 import asyncio
 import logging
@@ -12,6 +22,8 @@ from datetime import datetime
 from agents import Agent, Runner, trace
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from litellm.exceptions import RateLimitError
+
+from producers.retirement_bridge import emit_retirement_facts
 
 
 class AgentTemporaryError(Exception):
@@ -65,7 +77,26 @@ def get_user_preferences(job_id: str) -> Dict[str, Any]:
     wait=wait_exponential(multiplier=1, min=4, max=60),
     before_sleep=lambda retry_state: logger.info(f"Retirement: Temporary error, retrying in {retry_state.next_action.sleep} seconds...")
 )
-async def run_retirement_agent(job_id: str, portfolio_data: Dict[str, Any]) -> Dict[str, Any]:
+
+# async def persist_retirement_actions(
+    # user_id: str,
+    # job_id: str,
+    # retirement_response: dict
+# ):
+    # from common.action_deriver import derive_retirement_actions
+    # from common.alert_store import AlertStore
+    # from common.todo_store import TodoStore
+
+    # alerts, todos = derive_retirement_actions(
+        # user_id=user_id,
+        # job_id=job_id,
+        # retirement_report=retirement_response
+    # )
+
+    # AlertStore().insert_bulk(alerts)
+    # TodoStore().insert_bulk(todos)
+
+async def run_retirement_agent(job_id: str, user_id: str, portfolio_data: Dict[str, Any]) -> Dict[str, Any]:
     """Run the retirement specialist agent."""
     
     # Get user preferences
@@ -113,6 +144,22 @@ async def run_retirement_agent(job_id: str, portfolio_data: Dict[str, Any]) -> D
         
         if not success:
             logger.error(f"Failed to save retirement analysis for job {job_id}")
+
+        # try:
+            # wait persist_retirement_actions(
+            # user_id=user_id,
+            # job_id=job_id,
+            # retirement_response=result.final_output
+            # )
+        # except Exception as e:
+            # logger.exception("Failed to persist retirement actions")
+
+        await emit_retirement_facts(
+            user_id=user_id,
+            job_id=job_id,
+            retirement_report=result.final_output
+        )
+
         
         return {
             'success': success,
@@ -139,6 +186,11 @@ def lambda_handler(event, context):
             if isinstance(event, str):
                 event = json.loads(event)
 
+            logger.info(f"[TRACE] portfolio_data exists in event: {'portfolio_data' in event}")
+            logger.info(f"[TRACE] portfolio_data type: {type(event.get('portfolio_data'))}")
+            logger.info(f"[TRACE] portfolio_data value: {str(event.get('portfolio_data'))[:300]}")
+
+
             job_id = event.get('job_id')
             if not job_id:
                 return {
@@ -147,8 +199,9 @@ def lambda_handler(event, context):
                 }
 
             portfolio_data = event.get('portfolio_data')
-            if not portfolio_data:
+            if not portfolio_data or not portfolio_data.get("accounts"):
                 # Try to load from database
+                logger.info("[TRACE] ENTERING DB LOAD BLOCK")
                 logger.info(f"Retirement Loading portfolio data for job {job_id}")
                 try:
                     import sys
@@ -157,6 +210,10 @@ def lambda_handler(event, context):
 
                     db = Database()
                     job = db.jobs.find_by_id(job_id)
+                    logger.info(f"[TRACE] job found: {bool(job)}")
+                    if job:
+                        logger.info(f"[TRACE] clerk_user_id: {job.get('clerk_user_id')}")
+
                     if job:
                         if observability:
                             observability.create_event(
@@ -166,7 +223,9 @@ def lambda_handler(event, context):
                         # portfolio_data = job.get('request_payload', {}).get('portfolio_data', {})
                         user_id = job['clerk_user_id']
                         user = db.users.find_by_clerk_id(user_id)
+                        logger.info(f"[TRACE] user found: {bool(user)}")
                         accounts = db.accounts.find_by_user(user_id)
+                        logger.info(f"[TRACE] accounts count: {len(accounts)}")
 
                         portfolio_data = {
                             'user_id': user_id,
@@ -185,6 +244,7 @@ def lambda_handler(event, context):
                             }
 
                             positions = db.positions.find_by_account(account['id'])
+                            logger.info(f"[TRACE] positions loaded for account {account['id']}: {len(positions)}")
                             for position in positions:
                                 instrument = db.instruments.find_by_symbol(position['symbol'])
                                 if instrument:
@@ -197,6 +257,8 @@ def lambda_handler(event, context):
                             portfolio_data['accounts'].append(account_data)
 
                         logger.info(f"Retirement: Loaded {len(portfolio_data['accounts'])} accounts with positions")
+                        logger.info(f"[TRACE] FINAL portfolio_data keys: {list(portfolio_data.keys())}")
+                        logger.info(f"[TRACE] accounts length: {len(portfolio_data['accounts'])}")
                     else:
                         logger.error(f"Retirement: Job {job_id} not found")
                         return {
@@ -209,11 +271,12 @@ def lambda_handler(event, context):
                         'statusCode': 400,
                         'body': json.dumps({'error': 'No portfolio data provided'})
                     }
-
+            logger.info(f"[TRACE] ABOUT TO RUN AGENT for job {job_id}")
+            logger.info(f"[TRACE] portfolio_data summary: accounts={len(portfolio_data.get('accounts', []))}")
             logger.info(f"Retirement: Processing job {job_id}")
 
             # Run the agent
-            result = asyncio.run(run_retirement_agent(job_id, portfolio_data))
+            result = asyncio.run(run_retirement_agent(job_id, user_id, portfolio_data))
 
             logger.info(f"Retirement completed for job {job_id}")
 

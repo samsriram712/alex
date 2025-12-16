@@ -18,7 +18,9 @@ from pydantic import BaseModel, Field, ValidationError
 import boto3
 from mangum import Mangum
 from dotenv import load_dotenv
-from fastapi_clerk_auth import ClerkConfig, ClerkHTTPBearer, HTTPAuthorizationCredentials
+#from fastapi_clerk_auth import ClerkConfig, ClerkHTTPBearer, HTTPAuthorizationCredentials
+from .dependencies import get_current_user_id, clerk_guard
+from fastapi_clerk_auth import HTTPAuthorizationCredentials
 
 from src import Database
 from src.schemas import (
@@ -66,6 +68,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi import Response
+
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    response = Response(status_code=204)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Authorization,Content-Type"
+    return response
+
 # Custom exception handlers for better error messages
 @app.exception_handler(ValidationError)
 async def validation_exception_handler(request: Request, exc: ValidationError):
@@ -111,16 +123,16 @@ sqs_client = boto3.client('sqs', region_name=os.getenv('DEFAULT_AWS_REGION', 'us
 SQS_QUEUE_URL = os.getenv('SQS_QUEUE_URL', '')
 
 # Clerk authentication setup (exactly like saas reference)
-clerk_config = ClerkConfig(jwks_url=os.getenv("CLERK_JWKS_URL"))
-clerk_guard = ClerkHTTPBearer(clerk_config)
+# clerk_config = ClerkConfig(jwks_url=os.getenv("CLERK_JWKS_URL"))
+# clerk_guard = ClerkHTTPBearer(clerk_config)
 
-async def get_current_user_id(creds: HTTPAuthorizationCredentials = Depends(clerk_guard)) -> str:
-    """Extract user ID from validated Clerk token"""
+# async def get_current_user_id(creds: HTTPAuthorizationCredentials = Depends(clerk_guard)) -> str:
+    # """Extract user ID from validated Clerk token"""
     # The clerk_guard dependency already validated the token
     # creds.decoded contains the JWT payload
-    user_id = creds.decoded["sub"]
-    logger.info(f"Authenticated user: {user_id}")
-    return user_id
+    # user_id = creds.decoded["sub"]
+    # logger.info(f"Authenticated user: {user_id}")
+    # return user_id
 
 # Request/Response models
 class UserResponse(BaseModel):
@@ -780,6 +792,13 @@ async def populate_test_data(clerk_user_id: str = Depends(get_current_user_id)):
     except Exception as e:
         logger.error(f"Error populating test data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+from .routes.alerts import router as alerts_router
+from .routes.todos import router as todos_router
+
+app.include_router(alerts_router, prefix="/api")
+app.include_router(todos_router, prefix="/api")
+
 
 # Lambda handler
 handler = Mangum(app)

@@ -10,6 +10,7 @@ import asyncio
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from dataclasses import dataclass
+from botocore.config import Config
 
 from agents import function_tool, RunContextWrapper
 from agents.extensions.models.litellm_model import LitellmModel
@@ -23,7 +24,13 @@ class AgentTemporaryError(Exception):
     pass
 
 # Initialize Lambda client
-lambda_client = boto3.client("lambda")
+lambda_client = boto3.client("lambda",
+                config=Config(
+                    read_timeout=300,
+                    connect_timeout=10,
+                    retries={"max_attempts": 1},
+                ),
+            )
 
 # Lambda function names from environment
 TAGGER_FUNCTION = os.getenv("TAGGER_FUNCTION", "alex-tagger")

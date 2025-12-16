@@ -191,13 +191,7 @@ def main():
                                     "ImageIdentifier": f"{ecr_url}:{image_tag}",
                                     "ImageConfiguration": {
                                         "Port": "8000",
-                                        "RuntimeEnvironmentVariables": {
-                                            "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
-                                            "ALEX_API_KEY": os.environ.get("ALEX_API_KEY", ""),
-                                            "ALEX_API_ENDPOINT": os.environ.get(
-                                                "ALEX_API_ENDPOINT", ""
-                                            ),
-                                        },
+
                                     },
                                     "ImageRepositoryType": "ECR",
                                 },

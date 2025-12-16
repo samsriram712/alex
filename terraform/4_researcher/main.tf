@@ -179,6 +179,7 @@ resource "aws_apprunner_service" "researcher" {
           AURORA_CLUSTER_ARN = var.database_cluster_arn
           AURORA_SECRET_ARN  = var.database_secret_arn
           DEFAULT_AWS_REGION = var.aws_region
+          BRAVE_API_KEY      = var.brave_api_key
         }
       }
       image_repository_type = "ECR"

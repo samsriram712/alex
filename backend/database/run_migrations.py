@@ -133,6 +133,96 @@ statements = [
         FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()""",
     """CREATE OR REPLACE TRIGGER update_jobs_updated_at BEFORE UPDATE ON jobs
         FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()""",
+
+    # Alerts & TODOs
+    """CREATE TABLE IF NOT EXISTS alerts (
+    alert_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    clerk_user_id VARCHAR(255) NOT NULL,
+    job_id        UUID NULL,
+    symbol        VARCHAR(20) NULL,
+
+    domain        VARCHAR(20) NOT NULL CHECK (domain IN ('portfolio', 'retirement')),
+    category      VARCHAR(50) NOT NULL,
+    severity      VARCHAR(20) NOT NULL CHECK (severity IN ('info','warning','critical')),
+
+    title         TEXT NOT NULL,
+    message       TEXT NOT NULL,
+    rationale     TEXT NULL,
+
+    status        VARCHAR(20) NOT NULL DEFAULT 'new'
+                  CHECK (status IN ('new','read','dismissed')),
+
+    created_at    TIMESTAMP DEFAULT NOW(),
+    updated_at    TIMESTAMP DEFAULT NOW(),
+
+    CONSTRAINT fk_alert_user FOREIGN KEY (clerk_user_id)
+        REFERENCES users(clerk_user_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_alert_job FOREIGN KEY (job_id)
+        REFERENCES jobs(id)
+        ON DELETE SET NULL
+    )""",
+    # Table TODOs
+    """CREATE TABLE IF NOT EXISTS todos (
+    todo_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    clerk_user_id VARCHAR(255) NOT NULL,
+    job_id        UUID NULL,
+    symbol        VARCHAR(20) NULL,
+
+    domain        VARCHAR(20) NOT NULL CHECK (domain IN ('portfolio', 'retirement')),
+
+    title         TEXT NOT NULL,
+    description   TEXT NOT NULL,
+    rationale     TEXT NULL,
+
+    action_type   VARCHAR(50) NOT NULL,
+    priority      VARCHAR(20) NOT NULL CHECK (priority IN ('low','medium','high')),
+
+    status        VARCHAR(20) NOT NULL DEFAULT 'open'
+                  CHECK (status IN ('open','in_progress','done')),
+
+    due_at        TIMESTAMP NULL,
+
+    created_at    TIMESTAMP DEFAULT NOW(),
+    updated_at    TIMESTAMP DEFAULT NOW(),
+
+    CONSTRAINT fk_todo_user FOREIGN KEY (clerk_user_id)
+        REFERENCES users(clerk_user_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_todo_job FOREIGN KEY (job_id)
+        REFERENCES jobs(id)
+        ON DELETE SET NULL
+    )""",
+    # Indexes Alerts
+    """CREATE INDEX IF NOT EXISTS idx_alerts_user ON alerts(clerk_user_id)""",
+    """CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status)""",
+    """CREATE INDEX IF NOT EXISTS idx_alerts_symbol ON alerts(symbol)""",
+    """CREATE INDEX IF NOT EXISTS idx_alerts_domain ON alerts(domain)""",
+    """CREATE INDEX IF NOT EXISTS idx_alerts_job ON alerts(job_id)""",
+    """CREATE INDEX IF NOT EXISTS idx_alerts_user_status ON alerts(clerk_user_id, status)""",
+    """CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity)""",
+    # Indexes TODOs
+    """CREATE INDEX IF NOT EXISTS idx_todos_user ON todos(clerk_user_id)""",
+    """CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status)""",
+    """CREATE INDEX IF NOT EXISTS idx_todos_symbol ON todos(symbol)""",
+    """CREATE INDEX IF NOT EXISTS idx_todos_domain ON todos(domain)""",
+    """CREATE INDEX IF NOT EXISTS idx_todos_job ON todos(job_id)""",
+    """CREATE INDEX IF NOT EXISTS idx_todos_user_status ON todos(clerk_user_id, status)""",
+    """CREATE INDEX IF NOT EXISTS idx_todos_priority ON todos(priority)""",
+    """CREATE INDEX IF NOT EXISTS idx_todos_due ON todos(due_at)""",
+    # ALERT EXTENSIONS
+    """ALTER TABLE alerts ADD COLUMN IF NOT EXISTS action_required BOOLEAN DEFAULT false""",
+    """ALTER TABLE alerts ADD COLUMN IF NOT EXISTS confidence_score INTEGER 
+    CHECK (confidence_score BETWEEN 0 AND 100)""",
+    """ALTER TABLE alerts ADD COLUMN IF NOT EXISTS action_hint VARCHAR(50)""",
+    """ALTER TABLE alerts ADD COLUMN engine_version VARCHAR(20)""",
+    """ALTER TABLE alerts ADD COLUMN reasoning JSONB""",
+    # TODO LINKING
+    """ALTER TABLE todos ADD COLUMN IF NOT EXISTS source_alert_id UUID""",
+    """ALTER TABLE todos ADD CONSTRAINT fk_todo_alert 
+    FOREIGN KEY (source_alert_id) REFERENCES alerts(alert_id) ON DELETE SET NULL""",
 ]
 
 print("🚀 Running database migrations...")
@@ -154,7 +244,8 @@ for i, stmt in enumerate(statements, 1):
         stmt_type = "function"
     elif "CREATE EXTENSION" in stmt.upper():
         stmt_type = "extension"
-
+    elif "ALTER TABLE" in stmt.upper():
+        stmt_type = "alter table"
     # First non-empty line for display
     first_line = next(l for l in stmt.split("\n") if l.strip())[:60]
     print(f"\n[{i}/{len(statements)}] Creating {stmt_type}...")

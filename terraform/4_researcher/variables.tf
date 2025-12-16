@@ -36,3 +36,10 @@ variable "database_secret_arn" {
   description = "Aurora DB secret ARN"
   type        = string
 }
+
+
+variable "brave_api_key" {
+  description = "BRAVE API key for browsing"
+  type        = string
+  sensitive   = true
+}

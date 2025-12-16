@@ -102,6 +102,7 @@ def package_lambda():
         shutil.copy(reporter_dir / "__init__.py", package_dir)  # optional but keeps 'reporter' as a package
 
         shutil.copytree(backend_dir / "common", package_dir / "common")
+        shutil.copytree(backend_dir / "producers", package_dir / "producers")
 
         # Create the zip file
         zip_path = reporter_dir / "reporter_lambda.zip"

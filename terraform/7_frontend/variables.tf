@@ -15,3 +15,17 @@ variable "clerk_issuer" {
   type        = string
   default     = ""  # Not actually used but kept for backwards compatibility
 }
+
+
+# Development mode execution
+variable "dev_mode" {
+  description = "Ability to override to Development user and bypass Clerk credential check"
+  type        = bool
+  default     = false
+}
+
+variable "dev_user_id" {
+  description = "Development user ID"
+  type        = string
+  default     = "test_user_001" 
+}

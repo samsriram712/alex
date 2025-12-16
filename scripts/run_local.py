@@ -13,6 +13,7 @@ from pathlib import Path
 
 # Track subprocesses for cleanup
 processes = []
+project_root = Path(__file__).parent.parent
 
 def cleanup(signum=None, frame=None):
     """Clean up all subprocess on exit"""
@@ -68,7 +69,7 @@ def check_requirements():
 
 def check_env_files():
     """Check if environment files exist"""
-    project_root = Path(__file__).parent.parent
+    # project_root = Path(__file__).parent.parent
 
     root_env = project_root / ".env"
     frontend_env = project_root / "frontend" / ".env.local"
@@ -93,21 +94,26 @@ def check_env_files():
 
 def start_backend():
     """Start the FastAPI backend"""
-    backend_dir = Path(__file__).parent.parent / "backend" / "api"
+    # backend_dir = Path(__file__).parent.parent / "backend" / "api"
+    backend_dir = project_root
 
     print("\n🚀 Starting FastAPI backend...")
 
     # Check if dependencies are installed
-    if not (backend_dir / ".venv").exists() and not (backend_dir / "uv.lock").exists():
-        print("  Installing backend dependencies...")
-        subprocess.run(["uv", "sync"], cwd=backend_dir, check=True)
+    # if not (backend_dir / ".venv").exists() and not (backend_dir / "uv.lock").exists():
+        # print("  Installing backend dependencies...")
+        # subprocess.run(["uv", "sync"], cwd=backend_dir, check=True)
+
+    print("USING PYTHON:", os.getenv("VIRTUAL_ENV"))
 
     # Start the backend
     proc = subprocess.Popen(
-        ["uv", "run", "main.py"],
+        ["uv", "run", "--active", "-m", "backend.api.main"],
         cwd=backend_dir,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        # stdout=subprocess.PIPE,
+        # stderr=subprocess.PIPE,
+        stdout=None,
+        stderr=None,
         text=True,
         bufsize=1
     )

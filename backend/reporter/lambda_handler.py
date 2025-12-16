@@ -7,6 +7,9 @@ import os, sys
 
 # Force src to be importable
 sys.path.insert(0, os.path.join(os.getcwd(), "src"))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 # Alias src as database for legacy imports
 import src
@@ -15,21 +18,21 @@ sys.modules["database.src"] = src
 
 print("database in sys.modules?", "database" in sys.modules)
 
-sys.path.insert(0, os.getcwd())
+# sys.path.insert(0, os.getcwd())
 print("PYTHONPATH:", os.environ.get("PYTHONPATH"))
 print("SYS.PATH:")
 for p in sys.path:
     print(" ", p)
 print("CWD:", os.getcwd())
 
-print("\nListing /var/task:")
-print(os.listdir("/var/task"))
+# print("\nListing /var/task:")
+# print(os.listdir("/var/task"))
 
-if os.path.exists("/var/task/src"):
-    print("\n/src contents:")
-    print(os.listdir("/var/task/src"))
-else:
-    print("\n/src NOT FOUND")
+# if os.path.exists("/var/task/src"):
+    # print("\n/src contents:")
+    # print(os.listdir("/var/task/src"))
+# else:
+    # print("\n/src NOT FOUND")
 
 import json
 import asyncio
@@ -42,6 +45,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from litellm.exceptions import RateLimitError
 from judge import evaluate
 
+from producers.reporter_bridge import emit_reporter_facts
 
 class AgentTemporaryError(Exception):
     """Temporary error that should trigger retry"""
@@ -88,8 +92,29 @@ print("========== LOGGER INITIALISED ==========")
         f"Reporter: Temporary error, retrying in {retry_state.next_action.sleep} seconds..."
     ),
 )
+
+# async def persist_portfolio_actions(
+    # user_id: str,
+    # job_id: str,
+    # portfolio_response: dict
+# ):
+    # from common.action_deriver import derive_portfolio_actions
+    # from common.alert_store import AlertStore
+    # from common.todo_store import TodoStore
+
+    # alerts, todos = derive_portfolio_actions(
+        # user_id=user_id,
+        # job_id=job_id,
+        # portfolio_report=portfolio_response
+    # )
+
+    # AlertStore().insert_bulk(alerts)
+    # TodoStore().insert_bulk(todos)
+
+
 async def run_reporter_agent(
     job_id: str,
+    user_id:str,
     portfolio_data: Dict[str, Any],
     user_data: Dict[str, Any],
     db=None,
@@ -163,6 +188,21 @@ async def run_reporter_agent(
 
         if not success:
             logger.error(f"Failed to save report for job {job_id}")
+
+        # try:
+            # await persist_portfolio_actions(
+            # user_id=user_id,
+            # job_id=job_id,
+            # portfolio_response=response
+            # )
+        # except Exception as e:
+            # logger.exception("Failed to persist portfolio actions")
+
+        await emit_reporter_facts(
+            user_id=user_id,
+            job_id=job_id,
+            portfolio_report=response
+        )
 
         return {
             "success": success,
@@ -281,7 +321,7 @@ def lambda_handler(event, context):
 
             # Run the agent
             result = asyncio.run(
-                run_reporter_agent(job_id, portfolio_data, user_data, db, observability)
+                run_reporter_agent(job_id, user_id, portfolio_data, user_data, db, observability)
             )
 
             logger.info(f"Reporter completed for job {job_id}")

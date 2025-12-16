@@ -4,6 +4,9 @@ import { useRouter } from "next/router";
 import { ReactNode } from "react";
 import PageTransition from "./PageTransition";
 
+import { useAlertsSummary } from "@/lib/hooks/useAlertsSummary"
+import { useTodosOpenCount } from "@/lib/hooks/useTodosOpenCount"
+
 interface LayoutProps {
   children: ReactNode;
 }
@@ -11,6 +14,9 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const { user } = useUser();
   const router = useRouter();
+
+  const alerts = useAlertsSummary()
+  const todos = useTodosOpenCount()
 
   // Helper to determine if a link is active
   const isActive = (path: string) => router.pathname === path;
@@ -77,6 +83,23 @@ export default function Layout({ children }: LayoutProps) {
                     }`}
                   >
                     Analysis
+                  </Link>
+                  <Link href="/alerts" className="nav-item text-sm font-medium text-gray-600 hover:text-primary transition-colors">
+                    Alerts
+                    {alerts.unread_count > 0 && (
+                      <span className="badge badge-red">
+                        {alerts.unread_count}
+                      </span>
+                    )}
+                  </Link>
+
+                  <Link href="/todos" className="nav-item text-sm font-medium text-gray-600 hover:text-primary transition-colors">
+                    Tasks
+                    {todos > 0 && (
+                      <span className="badge badge-blue">
+                        {todos}
+                      </span>
+                    )}
                   </Link>
                 </div>
               </div>
