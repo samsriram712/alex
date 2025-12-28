@@ -46,6 +46,12 @@ interface Instrument {
   sector_allocation?: Record<string, number>;
 }
 
+function parseAsUtc(dateStr: string): Date {
+  // If it already has timezone info (Z or ±hh:mm), trust it.
+  const hasTz = /[zZ]$|[+-]\d{2}:\d{2}$/.test(dateStr);
+  return new Date(hasTz ? dateStr : `${dateStr}Z`);
+}
+
 export default function Dashboard() {
   const { user, isLoaded: userLoaded } = useUser();
   const { getToken } = useAuth();
@@ -195,6 +201,27 @@ export default function Dashboard() {
         // Get last analysis date
         // This would come from the jobs endpoint in a real implementation
         setLastAnalysisDate(null);
+        // Fetch last completed analysis
+        const jobsResponse = await fetch(`${API_URL}/api/jobs`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (jobsResponse.ok) {
+          const jobsData = await jobsResponse.json();
+          const completedJobs = (jobsData.jobs as JobSummary[] || [])
+            .filter((j) => j.status === 'completed')
+            .sort(
+              (a, b) =>
+                new Date(b.created_at).getTime() -
+                new Date(a.created_at).getTime()
+            );
+
+          if (completedJobs.length > 0) {
+            setLastAnalysisDate(completedJobs[0].created_at);
+          }
+        }
 
       } catch (err) {
         console.error("Error loading data:", err);
@@ -204,6 +231,12 @@ export default function Dashboard() {
       }
     }
 
+    interface JobSummary {
+      id: string;
+      status: string;
+      created_at: string;
+    }
+    
     loadData();
   }, [userLoaded, user, getToken]);
 
@@ -439,8 +472,16 @@ export default function Dashboard() {
 
           <div className="bg-white rounded-lg shadow p-6 text-center">
             <h3 className="text-sm font-medium text-gray-500 mb-3">Last Analysis</h3>
-            <p className="text-3xl font-bold text-dark">
-              {lastAnalysisDate ? new Date(lastAnalysisDate).toLocaleDateString() : "Never"}
+            <p className="text-2xl font-bold text-dark">
+            {lastAnalysisDate
+              ? parseAsUtc(lastAnalysisDate).toLocaleString(undefined, {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "Never"}
             </p>
           </div>
         </div>

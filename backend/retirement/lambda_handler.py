@@ -198,17 +198,22 @@ def lambda_handler(event, context):
                     'body': json.dumps({'error': 'job_id is required'})
                 }
 
+            # Initialize database
+            db = Database()
+
+            db.jobs.set_agent_status(job_id, "retirement", "running")
+
             portfolio_data = event.get('portfolio_data')
             if not portfolio_data or not portfolio_data.get("accounts"):
                 # Try to load from database
                 logger.info("[TRACE] ENTERING DB LOAD BLOCK")
                 logger.info(f"Retirement Loading portfolio data for job {job_id}")
                 try:
-                    import sys
-                    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-                    from src import Database
+                    # import sys
+                    # sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+                    # from src import Database
 
-                    db = Database()
+                    # db = Database()   #Moved earlier to allow job status update
                     job = db.jobs.find_by_id(job_id)
                     logger.info(f"[TRACE] job found: {bool(job)}")
                     if job:
@@ -279,6 +284,11 @@ def lambda_handler(event, context):
             result = asyncio.run(run_retirement_agent(job_id, user_id, portfolio_data))
 
             logger.info(f"Retirement completed for job {job_id}")
+            db.jobs.set_agent_status(job_id, "retirement", "completed")
+            db.jobs.set_agent_completed_at(job_id, "retirement")
+
+            if db.jobs.are_all_agents_completed(job_id):
+                db.jobs.update_status(job_id, "completed")
 
             return {
                 'statusCode': 200,
@@ -287,6 +297,13 @@ def lambda_handler(event, context):
 
         except Exception as e:
             logger.error(f"Error in retirement: {e}", exc_info=True)
+            try:
+                # db = Database()
+                if job_id:
+                    db.jobs.set_agent_status(job_id, "retirement", "failed")
+                    db.jobs.update_status(job_id, "failed", error_message=str(e))
+            except Exception:
+                pass
             return {
                 'statusCode': 500,
                 'body': json.dumps({

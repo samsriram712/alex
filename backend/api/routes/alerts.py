@@ -18,6 +18,7 @@ def list_alerts(
     domain: Optional[str] = None,
     status: Optional[str] = None,
     job_id: Optional[UUID] = None,
+    include_dismissed: bool = Query(False),
     limit: int = Query(50, le=100),
     user: str = Depends(get_current_user_id),
 ):
@@ -32,6 +33,7 @@ def list_alerts(
         domain=domain,
         status=status,
         job_id=job_id,
+        include_dismissed=include_dismissed,
         limit=limit
     )
 

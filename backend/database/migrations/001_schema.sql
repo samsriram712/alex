@@ -256,3 +256,17 @@ ADD CONSTRAINT fk_todo_alert
 FOREIGN KEY (source_alert_id)
 REFERENCES alerts(alert_id)
 ON DELETE SET NULL;
+
+-- Adds per-agent status tracking for portfolio analysis fan-out/fan-in
+
+ALTER TABLE jobs
+ADD COLUMN IF NOT EXISTS agent_status JSONB NOT NULL DEFAULT '{
+  "planner": "pending",
+  "reporter": "pending",
+  "charter": "pending",
+  "retirement": "pending"
+}'::jsonb;
+
+ALTER TABLE jobs
+ADD COLUMN IF NOT EXISTS agent_completed_at JSONB NOT NULL DEFAULT '{}'::jsonb;
+

@@ -579,7 +579,7 @@ async def get_job_status(job_id: str, clerk_user_id: str = Depends(get_current_u
         # Verify job belongs to user - jobs table stores clerk_user_id directly
         if job.get('clerk_user_id') != clerk_user_id:
             raise HTTPException(status_code=403, detail="Not authorized")
-
+        job["agent_status"] = job.get("agent_status") or {}
         return job
 
     except HTTPException:

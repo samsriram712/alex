@@ -9,11 +9,20 @@ logger.setLevel(logging.INFO)
 async def refresh_prices():
     db = Database()
     rows = db.query_raw("SELECT symbol FROM instruments WHERE symbol IS NOT NULL")
-    count, failures = 0, []
+    count, skipped, failures = 0, 0, []
     for r in rows:
         sym = r["symbol"]
         try:
             price = get_share_price_polygon(sym)
+
+            if price is None:
+                logger.warning(
+                    f"{sym}: no market price available; retaining previous price"
+                )
+                skipped += 1
+                continue
+
+
             db.query_raw(
                 "UPDATE instruments SET current_price = :p WHERE symbol = :s",
                 [
@@ -25,7 +34,7 @@ async def refresh_prices():
         except Exception as e:
             failures.append(sym)
             logger.warning(f"{sym}: {e}")
-    logger.info(f"Refreshed {count} symbols; failures={failures}")
+    logger.info(f"Refreshed {count} symbols; failures={failures}; skipped={skipped}")
     return {"count": count, "failures": failures}
 
 def lambda_handler(event, context):

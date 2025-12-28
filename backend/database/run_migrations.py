@@ -217,12 +217,26 @@ statements = [
     """ALTER TABLE alerts ADD COLUMN IF NOT EXISTS confidence_score INTEGER 
     CHECK (confidence_score BETWEEN 0 AND 100)""",
     """ALTER TABLE alerts ADD COLUMN IF NOT EXISTS action_hint VARCHAR(50)""",
-    """ALTER TABLE alerts ADD COLUMN engine_version VARCHAR(20)""",
-    """ALTER TABLE alerts ADD COLUMN reasoning JSONB""",
+    """ALTER TABLE alerts ADD COLUMN IF NOT EXISTS engine_version VARCHAR(20)""",
+    """ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reasoning JSONB""",
     # TODO LINKING
     """ALTER TABLE todos ADD COLUMN IF NOT EXISTS source_alert_id UUID""",
+    """ALTER TABLE todos DROP CONSTRAINT IF EXISTS fk_todo_alert""",
     """ALTER TABLE todos ADD CONSTRAINT fk_todo_alert 
     FOREIGN KEY (source_alert_id) REFERENCES alerts(alert_id) ON DELETE SET NULL""",
+
+    # Adds per-agent status tracking for portfolio analysis fan-out/fan-in
+    """ALTER TABLE jobs ADD COLUMN IF NOT EXISTS agent_status JSONB NOT NULL 
+        DEFAULT '{
+        "planner": "pending",
+        "reporter": "pending",
+        "charter": "pending",
+        "retirement": "pending"
+        }'::jsonb""",
+    """ALTER TABLE jobs ADD COLUMN IF NOT EXISTS agent_completed_at JSONB NOT NULL 
+        DEFAULT '{}'::jsonb""",
+    """ALTER TABLE todos DROP CONSTRAINT todos_status_check""",
+    """ALTER TABLE todos ADD CONSTRAINT todos_status_check CHECK (status IN ('open', 'in_progress', 'done', 'dismissed'))""",
 ]
 
 print("🚀 Running database migrations...")

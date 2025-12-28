@@ -10,7 +10,7 @@ type Todo = {
   priority: "low" | "medium" | "high"
   title: string
   description: string
-  status: "open" | "done" | "in_progress"
+  status: "open" | "done" | "in_progress" | "dismissed"
   created_at: string
 }
 
@@ -19,16 +19,22 @@ export default function TodosPage() {
   const [todos, setTodos] = useState<Todo[]>([])
   const [domain, setDomain] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showDismissed, setShowDismissed] = useState(false)
 
   useEffect(() => {
     loadTodos()
-  }, [domain])
+  }, [domain, showDismissed])
 
   async function loadTodos() {
     setLoading(true)
 
     let url = `${process.env.NEXT_PUBLIC_API_URL}/api/todos`
-    if (domain) url += `?domain=${domain}`
+    const params = new URLSearchParams()
+
+    if (domain) params.append("domain", domain)
+    if (showDismissed) params.append("include_dismissed", "true")
+
+    if (params.toString()) url += `?${params.toString()}`
 
     const token = await getToken()
 
@@ -57,7 +63,7 @@ export default function TodosPage() {
     setLoading(false)
   }
 
-  async function updateStatus(todoId: string, status: "done" | "in_progress") {
+  async function updateStatus(todoId: string, status: "done" | "in_progress" | "dismissed") {
     
     const token = await getToken()
 
@@ -101,6 +107,16 @@ export default function TodosPage() {
             <option value="research">Research</option>
             <option value="system">System</option>
           </select>
+
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "12px" }}>
+            <input
+              type="checkbox"
+              checked={showDismissed}
+              onChange={(e) => setShowDismissed(e.target.checked)}
+            />
+            Show dismissed
+          </label>
+
         </div>
 
         {loading && (<p className="text-gray-500">Loading tasks...</p>)}
@@ -124,7 +140,7 @@ export default function TodosPage() {
                   {todo.priority.toUpperCase()}
                 </span>
 
-                {todo.status !== "done" && (
+                {todo.status !== "dismissed" && (
                   <div className="actions" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     {/* State indicator (not clickable) */}
                     {todo.status === "in_progress" && (
@@ -165,6 +181,14 @@ export default function TodosPage() {
                       /* style={{ marginLeft: todo.status === "open" ? "8px" : "0" }} */
                     >
                       ✅ Done
+                    </button>
+
+                    <button
+                      onClick={() => updateStatus(todo.todo_id, "dismissed")}
+                      className="mark-read"
+                      style={{ backgroundColor: "#6b7280", color: "white" }} // gray-500
+                    >
+                      Dismiss
                     </button>
                   </div>
                 )}

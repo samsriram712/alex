@@ -183,6 +183,8 @@ def lambda_handler(event, context):
             # Initialize database first
             db = Database()
 
+            db.jobs.set_agent_status(job_id, "charter", "running")
+
             portfolio_data = event.get('portfolio_data')
             if not portfolio_data:
                 # Load portfolio data from database (like Reporter does)
@@ -243,6 +245,12 @@ def lambda_handler(event, context):
 
             logger.info(f"Charter completed for job {job_id}: {result}")
 
+            db.jobs.set_agent_status(job_id, "charter", "completed")
+            db.jobs.set_agent_completed_at(job_id, "charter")
+
+            if db.jobs.are_all_agents_completed(job_id):
+                db.jobs.update_status(job_id, "completed")
+
             return {
                 'statusCode': 200,
                 'body': json.dumps(result)
@@ -250,6 +258,14 @@ def lambda_handler(event, context):
 
         except Exception as e:
             logger.error(f"Error in charter: {e}", exc_info=True)
+            try:
+                db = Database()
+                if job_id:
+                    db.jobs.set_agent_status(job_id, "charter", "failed")
+                    db.jobs.update_status(job_id, "failed", error_message=str(e))
+            except Exception:
+                pass
+
             return {
                 'statusCode': 500,
                 'body': json.dumps({

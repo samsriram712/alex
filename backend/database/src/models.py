@@ -3,7 +3,7 @@ Database models and query builders
 """
 
 from typing import Dict, List, Optional, Any
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 from .client import DataAPIClient
 from .schemas import (
@@ -311,6 +311,88 @@ class Jobs(BaseModel):
             ]
         
         return self.db.query(sql, params)
+
+    def set_agent_status(self, job_id: str, agent: str, status: str) -> int:
+        """
+        Atomically set jobs.agent_status[agent] = status
+        status: pending | running | completed | failed
+        """
+        sql = """
+        UPDATE jobs
+        SET agent_status = jsonb_set(
+            COALESCE(agent_status, '{}'::jsonb),
+            :path::text[],
+            to_jsonb(:status::text),
+            true
+            ),
+            updated_at = NOW()
+        WHERE id = :id::uuid
+        """
+
+        params = [
+            {'name': 'id', 'value': {'stringValue': str(job_id)}},
+            {'name': 'status', 'value': {'stringValue': status}},
+            # IMPORTANT: Data API requires text[] via array-style parameter
+            {'name': 'path', 'value': {'stringValue': f'{{{agent}}}'}},
+        ]
+
+        response = self.db.execute(sql, params)
+        return response.get('numberOfRecordsUpdated', 0)
+
+    def set_agent_completed_at(self, job_id: str, agent: str) -> int:
+        """
+        Record completion timestamp for an agent in agent_completed_at JSONB
+        """
+        ts = datetime.now(timezone.utc).isoformat()
+
+        sql = """
+        UPDATE jobs
+        SET agent_completed_at = jsonb_set(
+            COALESCE(agent_completed_at, '{}'::jsonb),
+            :path::text[],
+            to_jsonb(:ts::text),
+            true
+            ),
+            updated_at = NOW()
+        WHERE id = :id::uuid
+        """
+
+        params = [
+            {'name': 'id', 'value': {'stringValue': str(job_id)}},
+            {'name': 'ts', 'value': {'stringValue': ts}},
+            {'name': 'path', 'value': {'stringValue': f'{{{agent}}}'}},
+        ]
+
+        response = self.db.execute(sql, params)
+        return response.get('numberOfRecordsUpdated', 0)
+
+    def get_agent_status(self, job_id: str) -> Dict[str, str]:
+        """
+        Fetch agent_status JSONB as a Python dict
+        """
+        sql = "SELECT agent_status FROM jobs WHERE id = :id::uuid"
+        params = [{'name': 'id', 'value': {'stringValue': str(job_id)}}]
+
+        row = self.db.query_one(sql, params)
+        return row.get('agent_status') if row and row.get('agent_status') else {}
+
+    def are_all_agents_completed(self, job_id: str) -> bool:
+        """
+        Fan-in condition: all 3 worker agents completed
+        """
+        s = self.get_agent_status(job_id)
+        return (
+            s.get("reporter") == "completed"
+            and s.get("charter") == "completed"
+            and s.get("retirement") == "completed"
+        )
+
+    def any_agent_failed(self, job_id: str) -> bool:
+        """
+        Returns True if any agent is in failed state
+        """
+        s = self.get_agent_status(job_id)
+        return any(v == "failed" for v in s.values())
 
 
 class Database:

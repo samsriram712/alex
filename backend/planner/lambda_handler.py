@@ -61,6 +61,12 @@ async def run_orchestrator(job_id: str) -> None:
     try:
         # Update job status to running
         db.jobs.update_status(job_id, 'running')
+
+        # Initialize agent_status for real UI fidelity
+        db.jobs.set_agent_status(job_id, "planner", "running")
+        db.jobs.set_agent_status(job_id, "reporter", "pending")
+        db.jobs.set_agent_status(job_id, "charter", "pending")
+        db.jobs.set_agent_status(job_id, "retirement", "pending")
         
         # Handle missing instruments first (non-agent pre-processing)
         await asyncio.to_thread(handle_missing_instruments, job_id, db)
@@ -102,8 +108,15 @@ async def run_orchestrator(job_id: str) -> None:
                 max_turns=20
             )
             
+            db.jobs.set_agent_status(job_id, "planner", "completed")
+            db.jobs.set_agent_completed_at(job_id, "planner")
+
+            # IMPORTANT: do NOT mark job completed here anymore.
+            # Completion is now owned by fan-in from the 3 agents.
+
+
             # Mark job as completed after all agents finish
-            db.jobs.update_status(job_id, "completed")
+            # db.jobs.update_status(job_id, "completed")
             end_time = datetime.now(timezone.utc)
             logger.info(json.dumps({
                 "event": "PLANNER_COMPLETED",
@@ -116,6 +129,7 @@ async def run_orchestrator(job_id: str) -> None:
     except Exception as e:
         logger.error(f"Planner: Error in orchestration: {e}", exc_info=True)
         db.jobs.update_status(job_id, 'failed', error_message=str(e))
+        db.jobs.set_agent_status(job_id, "planner", "failed")
         raise
 
 def lambda_handler(event, context):

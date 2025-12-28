@@ -42,7 +42,7 @@ from datetime import datetime
 
 from agents import Agent, Runner, trace
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from litellm.exceptions import RateLimitError
+from litellm.exceptions import RateLimitError, ServiceUnavailableError
 from judge import evaluate
 
 from producers.reporter_bridge import emit_reporter_facts
@@ -84,14 +84,14 @@ logger.setLevel(logging.INFO)
 
 print("========== LOGGER INITIALISED ==========")
 
-@retry(
-    retry=retry_if_exception_type((RateLimitError, AgentTemporaryError, TimeoutError, asyncio.TimeoutError)),
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=4, max=60),
-    before_sleep=lambda retry_state: logger.info(
-        f"Reporter: Temporary error, retrying in {retry_state.next_action.sleep} seconds..."
-    ),
-)
+# @retry(
+    # retry=retry_if_exception_type((RateLimitError, AgentTemporaryError, TimeoutError, asyncio.TimeoutError)),
+    # stop=stop_after_attempt(5),
+    # wait=wait_exponential(multiplier=1, min=4, max=60),
+    # before_sleep=lambda retry_state: logger.info(
+        # f"Reporter: Temporary error, retrying in {retry_state.next_action.sleep} seconds..."
+    # ),
+# )
 
 # async def persist_portfolio_actions(
     # user_id: str,
@@ -111,6 +111,42 @@ print("========== LOGGER INITIALISED ==========")
     # AlertStore().insert_bulk(alerts)
     # TodoStore().insert_bulk(todos)
 
+@retry(
+    # OUTER retry: Bedrock capacity issues (slow + patient)
+    retry=retry_if_exception_type((
+        ServiceUnavailableError,
+        RateLimitError,
+    )),
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(
+        multiplier=2,   # slower than Researcher
+        min=10,
+        max=120,
+    ),
+    before_sleep=lambda retry_state: logger.warning(
+        f"Reporter: Bedrock capacity issue, retrying in "
+        f"{retry_state.next_action.sleep}s "
+        f"(attempt {retry_state.attempt_number})"
+    ),
+)
+@retry(
+    # INNER retry: timeouts (fast + limited)
+    retry=retry_if_exception_type((
+        TimeoutError,
+        asyncio.TimeoutError,
+    )),
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(
+        multiplier=1,
+        min=2,
+        max=30,
+    ),
+    before_sleep=lambda retry_state: logger.warning(
+        f"Reporter: Timeout, retrying in "
+        f"{retry_state.next_action.sleep}s "
+        f"(attempt {retry_state.attempt_number})"
+    ),
+)
 
 async def run_reporter_agent(
     job_id: str,
@@ -140,15 +176,21 @@ async def run_reporter_agent(
             )
 
             response = result.final_output
+        except ServiceUnavailableError as e:
+            logger.warning(f"Reporter Bedrock capacity error: {e}")
+            raise  # handled by outer retry
+
+        except RateLimitError as e:
+            logger.warning(f"Reporter Bedrock rate limit: {e}")
+            raise  # handled by outer retry
+
         except (TimeoutError, asyncio.TimeoutError) as e:
-            logger.warning(f"Reporter agent timeout: {e}")
-            raise AgentTemporaryError(f"Timeout during agent execution: {e}")
-        except Exception as e:
-            error_str = str(e).lower()
-            if "timeout" in error_str or "throttled" in error_str:
-                logger.warning(f"Reporter temporary error: {e}")
-                raise AgentTemporaryError(f"Temporary error: {e}")
-            raise  # Re-raise non-retryable errors
+            logger.error(f"Reporter timeout (will use timeout retry): {e}")
+            raise  # handled by inner retry
+
+        except Exception:
+            raise  # fail fast for all other errors
+
 
         
 
@@ -240,6 +282,8 @@ def lambda_handler(event, context):
             # Initialize database
             db = Database()
 
+            db.jobs.set_agent_status(job_id, "reporter", "running")
+
             portfolio_data = event.get("portfolio_data")
             if not portfolio_data:
                 # Try to load from database
@@ -326,10 +370,22 @@ def lambda_handler(event, context):
 
             logger.info(f"Reporter completed for job {job_id}")
 
+            db.jobs.set_agent_status(job_id, "reporter", "completed")
+            db.jobs.set_agent_completed_at(job_id, "reporter")
+
+            if db.jobs.are_all_agents_completed(job_id):
+                db.jobs.update_status(job_id, "completed")
+
             return {"statusCode": 200, "body": json.dumps(result)}
 
         except Exception as e:
             logger.error(f"Error in reporter: {e}", exc_info=True)
+            try:
+                if job_id:
+                    db.jobs.set_agent_status(job_id, "reporter", "failed")
+                    db.jobs.update_status(job_id, "failed", error_message=str(e))
+            except Exception:
+                pass
             return {"statusCode": 500, "body": json.dumps({"success": False, "error": str(e)})}
 
 

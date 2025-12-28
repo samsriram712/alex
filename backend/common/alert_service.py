@@ -26,7 +26,7 @@ def emit_alert(ctx: AlertContext) -> EngineResult:
     alert_dict: Dict[str, Any] = {
         "clerk_user_id": ctx.clerk_user_id,
         "job_id": ctx.job_id or None,   # if you later bind job_id into context, wire here
-        "symbol": ctx.symbol,
+        "symbol": ctx.symbol or None,
         "domain": ctx.domain,
         "category": ctx.category,
         "severity": ctx.severity or "info",

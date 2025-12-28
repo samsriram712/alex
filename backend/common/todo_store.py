@@ -42,6 +42,7 @@ class TodoStore:
                    domain: Optional[str] = None,
                    status: Optional[str] = None,
                    job_id: Optional[UUID] = None,
+                   include_dismissed: bool = False,
                    limit: int = 50):
 
         sql = """
@@ -50,6 +51,7 @@ class TodoStore:
             WHERE clerk_user_id = :user
                 AND (:symbol::varchar IS NULL OR symbol = :symbol::varchar)
                 AND (:domain::varchar IS NULL OR domain = :domain::varchar)
+                AND (:include_dismissed::boolean = TRUE OR status != 'dismissed')
                 AND (:status::varchar IS NULL OR status = :status::varchar)
                 AND (:job_id::uuid IS NULL OR job_id = :job_id::uuid)
             ORDER BY created_at
@@ -61,7 +63,8 @@ class TodoStore:
             symbol=symbol,
             domain=domain,
             status=status,
-            job_id=job_id
+            job_id=job_id,
+            include_dismissed=include_dismissed
         ))
 
     # -------------------------

@@ -89,7 +89,7 @@ DO NOT browse:
 ANALYSIS (KEEP IT SHORT AND CLEAN)
 ---------------------------------
 
-- 3–5 bullet points max
+- 3-5 bullet points max
 - Each bullet MUST cite the source in (source: ...)
 - Use domain based attribution not raw URLs
    Example:
@@ -120,7 +120,7 @@ SAVE TO DATABASE
 
 - Always call ingest_financial_document
 - Topic format:
-  "[SYMBOL] Analysis – {today}"
+  "[SYMBOL] Analysis - {today}"
 - Save concise, factual analysis only
 
 --------------------

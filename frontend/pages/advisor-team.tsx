@@ -20,6 +20,8 @@ interface Job {
   created_at: string;
   status: string;
   job_type: string;
+  agent_status?: Record<string, 'pending' | 'running' | 'completed' | 'failed'>;
+  error_message?: string;
 }
 
 interface AnalysisProgress {
@@ -95,6 +97,43 @@ export default function AdvisorTeam() {
         if (response.ok) {
           const job = await response.json();
 
+          const agentStatus = job.agent_status || {};
+
+          const uiAgentMap: Record<string, string> = {
+            planner: 'Financial Planner',
+            reporter: 'Portfolio Analyst',
+            charter: 'Chart Specialist',
+            retirement: 'Retirement Planner',
+          };
+
+          const runningAgents = Object.entries(agentStatus)
+            .filter(([, s]) => s === 'running')
+            .map(([k]) => uiAgentMap[k])
+            .filter(Boolean);
+
+          const anyFailed = Object.values(agentStatus).some((s) => s === 'failed');
+
+          if (anyFailed) {
+            setProgress({
+              stage: 'error',
+              message: 'Analysis failed',
+              activeAgents: [],
+              error: job.error_message || 'One of the agents failed'
+            });
+
+            if (pollInterval) {
+              clearInterval(pollInterval);
+              setPollInterval(null);
+            }
+
+            // Emit failure event
+            emitAnalysisFailed(jobId, job.error);
+
+            setIsAnalyzing(false);
+            setCurrentJobId(null);
+
+          } else 
+
           if (job.status === 'completed') {
             setProgress({
               stage: 'complete',
@@ -116,24 +155,40 @@ export default function AdvisorTeam() {
             setTimeout(() => {
               router.push(`/analysis?job_id=${jobId}`);
             }, 1500);
-          } else if (job.status === 'failed') {
+          } else {
+
+          // Running / Pending: show planner vs parallel accurately
+            // const plannerRunning = agentStatus.planner === 'running';
+            // const plannerCompleted = agentStatus.planner === 'completed';
+
+            // if (plannerRunning && !plannerCompleted) {
+              // setProgress({
+                // stage: 'planner',
+                // message: 'Financial Planner coordinating analysis...',
+                // activeAgents: ['Financial Planner']
+              // });
+            // } else {
+              // setProgress({
+                // stage: 'parallel',
+                // message: 'Agents working in parallel...',
+                // activeAgents: runningAgents.length ? runningAgents : ['Portfolio Analyst', 'Chart Specialist', 'Retirement Planner']
+              // });
+            // }
+            
+
+            // Planner is always active while job is not completed/failed
+            const activeAgents = [
+              'Financial Planner',
+              ...runningAgents
+            ].filter((v, i, a) => a.indexOf(v) === i);
+
             setProgress({
-              stage: 'error',
-              message: 'Analysis failed',
-              activeAgents: [],
-              error: job.error || 'Analysis encountered an error'
+              stage: runningAgents.length > 0 ? 'parallel' : 'planner',
+              message: runningAgents.length > 0
+                ? 'Agents working in parallel...'
+                : 'Financial Planner coordinating analysis...',
+              activeAgents
             });
-
-            if (pollInterval) {
-              clearInterval(pollInterval);
-              setPollInterval(null);
-            }
-
-            // Emit failure event
-            emitAnalysisFailed(jobId, job.error);
-
-            setIsAnalyzing(false);
-            setCurrentJobId(null);
           }
         }
       } catch (error) {
@@ -210,13 +265,13 @@ export default function AdvisorTeam() {
           activeAgents: ['Financial Planner']
         });
 
-        setTimeout(() => {
-          setProgress({
-            stage: 'parallel',
-            message: 'Agents working in parallel...',
-            activeAgents: ['Portfolio Analyst', 'Chart Specialist', 'Retirement Planner']
-          });
-        }, 5000);
+        // setTimeout(() => {
+          // setProgress({
+            // stage: 'parallel',
+            // message: 'Agents working in parallel...',
+            // activeAgents: ['Portfolio Analyst', 'Chart Specialist', 'Retirement Planner']
+          // });
+        // }, 5000);
       } else {
         throw new Error('Failed to start analysis');
       }

@@ -20,16 +20,22 @@ export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [domain, setDomain] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showDismissed, setShowDismissed] = useState(false)
 
   useEffect(() => {
     loadAlerts()
-  }, [domain])
+  }, [domain, showDismissed])
 
   async function loadAlerts() {
     setLoading(true)
   
     let url = `${process.env.NEXT_PUBLIC_API_URL}/api/alerts`
-    if (domain) url += `?domain=${domain}`
+    const params = new URLSearchParams()
+
+    if (domain) params.append("domain", domain)
+    if (showDismissed) params.append("include_dismissed", "true")
+
+    if (params.toString()) url += `?${params.toString()}`
   
     const token = await getToken()
 
@@ -74,6 +80,19 @@ export default function AlertsPage() {
     loadAlerts()
   }
 
+  async function dismissAlert(alertId: string) {
+    const token = await getToken()
+    
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/alerts/${alertId}?status=dismissed`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+    
+    loadAlerts()
+  }
+
   return (
     <>
       <Head>
@@ -114,6 +133,16 @@ export default function AlertsPage() {
             <option value="retirement">Retirement</option>
           </select>
 
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "12px" }}>
+            <input
+              type="checkbox"
+              checked={showDismissed}
+              onChange={(e) => setShowDismissed(e.target.checked)}
+            />
+            Show dismissed
+          </label>
+
+
         </div>
 
         {/* LOADING STATE */}
@@ -143,14 +172,30 @@ export default function AlertsPage() {
                   {alert.severity.toUpperCase()}
                 </span>
 
-                {alert.status === "new" && (
-                  <button
-                    onClick={() => markAsRead(alert.alert_id)}
-                    className="mark-read"
+                {alert.status !== "dismissed" && (
+                  <div
+                    className="actions"
+                    style={{ display: "flex", alignItems: "center", gap: "8px" }}
                   >
-                    Mark as read
-                  </button>
+                    {alert.status === "new" && (
+                      <button
+                        onClick={() => markAsRead(alert.alert_id)}
+                        className="mark-read"
+                      >
+                        Mark as read
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => dismissAlert(alert.alert_id)}
+                      className="mark-read"
+                      style={{ backgroundColor: "#6b7280", color: "white" }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
                 )}
+
               </div>
 
               <h3>{alert.title}</h3>

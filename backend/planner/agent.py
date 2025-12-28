@@ -11,6 +11,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from dataclasses import dataclass
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from agents import function_tool, RunContextWrapper
 from agents.extensions.models.litellm_model import LitellmModel
@@ -232,12 +233,15 @@ async def invoke_reporter_internal(job_id: str) -> str:
     Returns:
         Confirmation message
     """
-    result = await invoke_lambda_agent("Reporter", REPORTER_FUNCTION, {"job_id": job_id})
+    # result = await invoke_lambda_agent("Reporter", REPORTER_FUNCTION, {"job_id": job_id})
 
-    if "error" in result:
-        return f"Reporter agent failed: {result['error']}"
+    # if "error" in result:
+        # return f"Reporter agent failed: {result['error']}"
 
-    return "Reporter agent completed successfully. Portfolio analysis narrative has been generated and saved."
+    # return "Reporter agent completed successfully. Portfolio analysis narrative has been generated and saved."
+
+    await invoke_lambda_agent_event("Reporter", REPORTER_FUNCTION, {"job_id": job_id})
+    return "Reporter invoked (async)."
 
 
 async def invoke_charter_internal(job_id: str) -> str:
@@ -250,14 +254,17 @@ async def invoke_charter_internal(job_id: str) -> str:
     Returns:
         Confirmation message
     """
-    result = await invoke_lambda_agent(
-        "Charter", CHARTER_FUNCTION, {"job_id": job_id}
-    )
+    # result = await invoke_lambda_agent(
+        # "Charter", CHARTER_FUNCTION, {"job_id": job_id}
+    # )
 
-    if "error" in result:
-        return f"Charter agent failed: {result['error']}"
+    # if "error" in result:
+        # return f"Charter agent failed: {result['error']}"
 
-    return "Charter agent completed successfully. Portfolio visualizations have been created and saved."
+    # return "Charter agent completed successfully. Portfolio visualizations have been created and saved."
+
+    await invoke_lambda_agent_event("Charter", CHARTER_FUNCTION, {"job_id": job_id})
+    return "Charter invoked (async)."
 
 
 async def invoke_retirement_internal(job_id: str) -> str:
@@ -270,12 +277,44 @@ async def invoke_retirement_internal(job_id: str) -> str:
     Returns:
         Confirmation message
     """
-    result = await invoke_lambda_agent("Retirement", RETIREMENT_FUNCTION, {"job_id": job_id})
+    # result = await invoke_lambda_agent("Retirement", RETIREMENT_FUNCTION, {"job_id": job_id})
 
-    if "error" in result:
-        return f"Retirement agent failed: {result['error']}"
+    # if "error" in result:
+        # return f"Retirement agent failed: {result['error']}"
 
-    return "Retirement agent completed successfully. Retirement projections have been calculated and saved."
+    # return "Retirement agent completed successfully. Retirement projections have been calculated and saved."
+
+    await invoke_lambda_agent_event("Retirement", RETIREMENT_FUNCTION, {"job_id": job_id})
+    return "Retirement invoked (async)."
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=5),
+    retry=retry_if_exception_type(ClientError),
+)
+async def invoke_lambda_agent_event(
+    agent_name: str, function_name: str, payload: Dict[str, Any]
+) -> None:
+    if MOCK_LAMBDAS:
+        logger.info(f"[MOCK] Would invoke (Event) {agent_name}")
+        return
+
+    try:
+        lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="Event",
+            Payload=json.dumps(payload).encode("utf-8"),
+        )
+        logger.info(f"{agent_name} async invoke accepted")
+
+    except ClientError as e:
+        code = e.response["Error"]["Code"]
+        # Retry ONLY infra-level issues
+        if code in ("ThrottlingException", "TooManyRequestsException"):
+            raise
+        raise
+
 
 
 
