@@ -73,3 +73,8 @@ variable "openai_api_key" {
   default     = ""
   sensitive   = true
 }
+
+variable "enable_price_refresher_schedule" {
+  type    = bool
+  default = true
+}

@@ -129,6 +129,7 @@ resource "aws_cloudwatch_event_rule" "daily" {
   name                = "alex-price-refresher-daily"
   description         = "Run once daily to refresh instrument prices"
   schedule_expression = "cron(0 5 * * ? *)" # 5 AM UTC
+  state               = var.enable_price_refresher_schedule ? "ENABLED" : "DISABLED"
 }
 
 resource "aws_cloudwatch_event_target" "target" {

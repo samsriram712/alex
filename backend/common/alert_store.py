@@ -16,6 +16,7 @@ class AlertStore:
                 AND category = :category
                 AND domain = :domain
                 AND (:symbol::varchar IS NULL OR symbol = :symbol::varchar)
+                AND status != 'dismissed'
                 LIMIT 1
         """
 
